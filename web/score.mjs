@@ -200,8 +200,10 @@ export function composeTrack(state,world=null,area=world?layoutArea(world,state.
   if(sprite==='spark'&&(s>>3)%4<2)return `${sprite}-${action}-3`;
   return `${sprite}-${action}-${s%4}`;
  });
- // 森の生き物は小節ごとに鳴く・休むを切り替える（休む間は止まっている）。
- const ambient=(sprite,action,idle,active)=>Array.from({length:steps},(_,s)=>{const m=segAt(s).mood,bar=Math.floor(local(s)/8);return `${sprite}-${action}-${active(m,bar,s)?s%4:idle}`;});
+ // 森の生き物は小節ごとに鳴く・休むを切り替える。
+ // 鳴かない間も、待機の動き（idle: 揺れる・呼吸・浮かぶ。音の出ないコマだけ）で拍に乗り続ける。
+ const IDLE_MOTION=new Set(['owl','frog','firefly']);
+ const ambient=(sprite,action,idle,active)=>Array.from({length:steps},(_,s)=>{const m=segAt(s).mood,bar=Math.floor(local(s)/8);return active(m,bar,s)?`${sprite}-${action}-${s%4}`:IDLE_MOTION.has(sprite)?`${sprite}-idle-${s%4}`:`${sprite}-${action}-${idle}`;});
  const calm=m=>m==='travel'||m==='rest';
  cast.frog=ambient('frog','croak',2,(m,bar)=>calm(m)&&bar%2===1);
  cast.owl=ambient('owl','hoot',1,(m,bar,s)=>calm(m)&&bar===3||m==='rest'&&bar===1&&segAt(s).index%2===1);

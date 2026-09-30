@@ -1,6 +1,7 @@
 import {readFile,writeFile,mkdir,copyFile} from 'node:fs/promises';
 import {appIcon} from './scripts/app-icon.mjs';
-import {PALETTE,SPRITES,EQUIPMENT_LAYERS} from './scripts/pixel-art.mjs';
+import {PALETTE,EQUIPMENT_LAYERS} from './scripts/pixel-art.mjs';
+import {CREATURE_SPRITES as SPRITES} from './scripts/creature-motion.mjs';
 import {LANES,THEMES,OBJECTS} from './scripts/forest-objects.mjs';
 import {forestScene} from './scripts/forest-scene.mjs';
 
