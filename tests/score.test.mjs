@@ -44,3 +44,16 @@ test('same state renders identical audio; gear changes the timbre but not the ti
  const wav=encodeWav(a);assert.equal(Buffer.from(wav.slice(0,4)).toString(),'RIFF');assert.equal(new DataView(wav.buffer).getUint32(24,true),MUSIC_RATE);
  let peak=0;for(const v of a)peak=Math.max(peak,Math.abs(v));assert.ok(peak>.1&&peak<.95,'audible without clipping: '+peak);
 });
+
+test('every pitched note is a tone of its bar chord and stops ringing when the chord changes',async()=>{
+ const {toChord}=await import('../web/score.mjs');
+ assert.equal(toChord(65,[52,55,59]),64,'F snaps to E over E minor');assert.equal(toChord(66,[52,55,59]),67);
+ for(const state of [run,{...run,running:false},{...run,weapon:'crystal-staff',armor:'star-cloak'}]){
+  const t=composeTrack(state,world);
+  const chord=s=>[[52,55,59],[48,52,55],[43,47,50],[50,54,57],[52,55,59],[48,52,55],[45,48,52],[47,51,54]][(s>>3)%8].map(n=>n%12);
+  for(const n of t.notes){
+   if(n.midi!=null)assert.ok(chord(n.step).includes(n.midi%12),`${n.inst} midi ${n.midi} at step ${n.step} is outside its chord`);
+   assert.ok(n.end<=t.stepTimes[Math.min(t.steps,((n.step>>3)+1)*8)]+1e-9,'note ends with its bar');
+  }
+ }
+});

@@ -49,40 +49,42 @@ const FOE = {travel:['spark','twinkle'],battle:['slime','bounce'],treasure:['che
 
 // 武器はゆっぴの音色、防具はゆっぴの響き。
 const WEAPON_VOICE = {none:'hum', 'leaf-blade':'pluck', 'crystal-staff':'bell', 'moon-blade':'lead'};
-const ARMOR_FX = {none:{}, 'moss-cloak':{lowpass:.35, echo:[1.5,.3,.35]}, 'prism-mail':{shimmer:true}, 'star-cloak':{echo:[3,.45,.45]}};
+const ARMOR_FX = {none:{}, 'moss-cloak':{lowpass:.35, echo:[.5,.15,.25]}, 'prism-mail':{shimmer:true}, 'star-cloak':{echo:[1,.25,.3]}};
 
 const INSTRUMENTS = {
  hum:{partials:[[1,1],[2,.12],[3,.05]], attack:.03, decay:.42},
  pluck:{partials:[[1,1],[2,.55],[3,.35],[4,.22],[5,.12]], attack:.002, decay:.2},
- bell:{partials:[[1,1],[2.76,.45],[5.4,.2],[8.93,.08]], attack:.002, decay:.7},
+ bell:{partials:[[1,1],[2,.45],[3,.18],[4,.1],[6,.05]], attack:.002, decay:.7},
  lead:{partials:[[1,1],[2,.5],[3,.33],[4,.25],[5,.2],[6,.16]], attack:.02, decay:.5, vibrato:[5.5,.006]},
- chime:{partials:[[1,1],[3,.18],[4.2,.08]], attack:.002, decay:.35},
- boing:{partials:[[1,1],[2,.25]], attack:.004, decay:.2, glide:-2},
- boom:{partials:[[1,1],[1.5,.3],[2,.2]], attack:.004, decay:.5, glide:-5},
- kick:{partials:[[1,1]], attack:.002, decay:.12, glide:-12},
+ chime:{partials:[[1,1],[2,.22],[4,.08]], attack:.002, decay:.35},
+ boing:{partials:[[1,1],[2,.25]], attack:.004, decay:.2, glide:3},
+ boom:{partials:[[1,1],[2,.3],[3,.15]], attack:.004, decay:.5, glide:7},
+ kick:{partials:[[1,1]], attack:.002, decay:.12, glide:12},
  croak:{partials:[[1,1],[2,.8],[3,.6],[4,.4],[5,.3]], attack:.01, decay:.09, tremolo:[28,.8]},
- hoot:{partials:[[1,1],[2,.08]], attack:.06, decay:.32, glide:-1},
+ hoot:{partials:[[1,1],[2,.08]], attack:.06, decay:.32, glide:1},
  pad:{partials:[[1,1],[1.004,.6],[2,.25]], attack:.9, decay:2.2},
  tick:{noise:true, attack:.001, decay:.025, hp:.55},
  swish:{noise:true, attack:.01, decay:.08, hp:.25},
  shaker:{noise:true, attack:.003, decay:.035, hp:.85},
  crackle:{noise:true, attack:.001, decay:.012, hp:.5},
  // 背景オブジェクトの声（scripts/forest-objects.mjs の voice）
- drip:{partials:[[1,1],[2,.2]], attack:.002, decay:.08, glide:7},
+ drip:{partials:[[1,1],[2,.2]], attack:.002, decay:.08, glide:-7},
  rustle:{noise:true, attack:.02, decay:.07, hp:.7},
- pop:{partials:[[1,1],[2,.3]], attack:.002, decay:.06, glide:5},
- glass:{partials:[[1,1],[2.4,.4],[5.1,.15]], attack:.002, decay:.5},
- creak:{partials:[[1,1],[2,.6],[3,.5],[4,.3]], attack:.04, decay:.15, glide:-3, tremolo:[18,.6]},
- 'bell-low':{partials:[[1,1],[2.76,.35],[5.4,.12]], attack:.003, decay:1.1},
+ pop:{partials:[[1,1],[2,.3]], attack:.002, decay:.06, glide:-5},
+ glass:{partials:[[1,1],[2,.3],[4,.12]], attack:.002, decay:.5},
+ creak:{partials:[[1,1],[2,.6],[3,.5],[4,.3]], attack:.04, decay:.15, glide:3, tremolo:[18,.6]},
+ 'bell-low':{partials:[[1,1],[2,.35],[3,.12]], attack:.003, decay:1.1},
  whoosh:{noise:true, attack:.12, decay:.25, hp:.15},
  'pluck-low':{partials:[[1,1],[2,.5],[3,.25]], attack:.002, decay:.25},
- wood:{partials:[[1,1],[2.9,.35]], attack:.001, decay:.05}
+ wood:{partials:[[1,1],[3,.3]], attack:.001, decay:.05}
 };
 // 背景オブジェクトの声の高さ（和音のどの音か・オクターブ）と、段ごとの音量・出番の間隔（小節）
 const OBJECT_PITCH = {chime:[2,24], drip:[0,24], pop:[1,12], glass:[2,24], creak:[0,0], 'bell-low':[0,0], 'pluck-low':[0,0], wood:[1,12]};
 const LANE_GAIN = {near:.2, mid:.12, far:.07};
 const LANE_PERIOD = {mid:2, far:4};
 
+// いちばん近い和音の構成音（同じ高さなら下を選ぶ）
+export function toChord(midi,chord){const classes=chord.map(n=>n%12);for(let d=0;d<=6;d++)for(const m of [midi-d,midi+d])if(classes.includes(((m%12)+12)%12))return m;return midi;}
 function rng(seed){let s=0;for(const c of seed)s=Math.imul(s^c.charCodeAt(0),2654435761)>>>0;return()=>{s=s+0x6D2B79F5>>>0;let t=Math.imul(s^s>>>15,1|s);t^=t+Math.imul(t^t>>>7,61|t);return((t^t>>>14)>>>0)/4294967296;};}
 function pick(r,items){const total=items.reduce((a,i)=>a+(i.weight||1),0);let x=r()*total;for(const i of items){x-=i.weight||1;if(x<0)return i;}return items.at(-1);}
 export function levelTier(level){return level>=20?3:level>=10?2:level>=5?1:0;}
@@ -116,14 +118,16 @@ export function composeTrack(state,world=null){
  // スウィング: 裏拍（奇数コマ）を区間ごとの量だけ後ろへ。コマの切り替えも同じ時刻にずらすので、絵もずれない。
  const stepTimes=Array.from({length:steps+1},(_,s)=>s===steps?steps/2*beat:Math.floor(s/2)*beat+(s%2?segAt(s).style.swing*beat:0));
  const tune=melody(zone),notes=[],voice=WEAPON_VOICE[weapon],fx=ARMOR_FX[armor];
- const note=(step,inst,midi,gain,bus='main',dur=.3)=>notes.push({step,inst,midi,gain,bus,dur});
+ // 音程はすべて、その小節の和音の構成音に吸着させ、小節の終わりで閉じる（次の和音へ持ち越さない）。
+ const barEnd=step=>stepTimes[Math.min(steps,(step>>3)*8+8)];
+ const note=(step,inst,midi,gain,bus='main',dur=.3)=>notes.push({step,inst,midi:midi==null?null:toChord(midi,chordAt(step)),gain,bus,dur,end:barEnd(step)});
  const heroNote=(s,midi,gain)=>{note(s,voice,midi,gain,'hero');if(fx.shimmer)note(s,'chime',midi+12,gain*.3,'hero');if(tier>=2)note(s,voice,midi-12,gain*.3,'hero');if(tier>=3)note(s,voice,chordAt(s)[1]+12,gain*.25,'hero');};
  const melodyAt=s=>tune[(s>>1)%tune.length]+12*segAt(s).style.lift;
  // 各コマで鳴る音。どれも「その役者がそのコマの動きをした音」。
  const sounds={
   'hero.walk':s=>heroNote(s,melodyAt(s),.34),
   'hero.attack':s=>{heroNote(s,melodyAt(s)+12,.42);note(s,'swish',null,weapon==='none'?.12:.22);if(tier>=1)note(s,voice,melodyAt(s)+19,.14,'hero');},
-  'hero.cheer':s=>heroNote(s,melodyAt(s)+(s%4?7:12),.36),
+  'hero.cheer':s=>heroNote(s,melodyAt(s)+12,.36),
   'hero.rest':s=>note(s,voice,melodyAt(s),.24,'hero',.9),
   'cat.walk':s=>note(s,'tick',null,.16),
   'cat.pounce':s=>note(s,'kick',48,.5),
@@ -216,7 +220,7 @@ function placeObjects(world,seg,moving,note,chordAt){
 // 楽譜を波形にする。末尾からはみ出た余韻は先頭へ回し込み、ループの継ぎ目を消す。
 export function renderTrack(track,rate=MUSIC_RATE){
  const len=Math.round(track.duration*rate),buses={main:new Float32Array(len),hero:new Float32Array(len)};
- track.notes.forEach((n,i)=>voice(buses[n.bus],n,INSTRUMENTS[n.inst],Math.round(track.stepTimes[n.step]*rate),rate,i));
+ track.notes.forEach((n,i)=>{const start=Math.round(track.stepTimes[n.step]*rate);voice(buses[n.bus],n,INSTRUMENTS[n.inst],start,rate,i,Math.round(n.end*rate)-start);});
  const beat=60/track.bpm;
  if(track.fx.lowpass)lowpass(buses.hero,track.fx.lowpass);
  if(track.fx.echo)echo(buses.hero,Math.round(track.fx.echo[0]*beat*rate),track.fx.echo[1],track.fx.echo[2]);
@@ -228,14 +232,15 @@ export function renderTrack(track,rate=MUSIC_RATE){
 const TABLE_SIZE=4096,SINE=Float32Array.from({length:TABLE_SIZE+1},(_,i)=>Math.sin(2*Math.PI*i/TABLE_SIZE));
 function sine(phase){const x=(phase-Math.floor(phase))*TABLE_SIZE,i=x|0;return SINE[i]+(SINE[i+1]-SINE[i])*(x-i);}
 // 1音を合成して足し込む。減衰は掛け算で進め、聞こえなくなったら打ち切る（端末で一瞬で終わるように）。
-function voice(buf,n,inst,start,rate,seed){
+function voice(buf,n,inst,start,rate,seed,until=Infinity){
  const len=buf.length,frames=Math.min(Math.ceil((n.dur+inst.decay*4)*rate),rate*4),r=rng('noise'+seed);
  const f0=n.midi==null?0:440*2**((n.midi-69)/12),ratios=inst.partials?.map(p=>p[0])??[],amps=inst.partials?.map(p=>p[1])??[],phases=ratios.map(()=>0);
  const fall=Math.exp(-1/(inst.decay*rate)),release=Math.exp(-1/(inst.decay*.5*rate)),held=Math.round(n.dur*rate),attack=Math.max(1,inst.attack*rate),w=1/rate;
- const bend=inst.glide?Math.exp(-1/(.06*rate)):0;
+ const bend=inst.glide?Math.exp(-1/(.06*rate)):0,close=Math.exp(-1/(.06*rate));
  let x0=0,y=0,decay=1,glide=1;
  for(let k=0;k<frames;k++){
   decay*=k<held?fall:fall*release;
+  if(k>=until)decay*=close;
   let env=decay*n.gain;if(k<attack)env*=k/attack;
   if(env<1e-4&&k>attack)break;
   const t=k/rate;
@@ -244,7 +249,7 @@ function voice(buf,n,inst,start,rate,seed){
   if(inst.noise){const x=r()*2-1;y=inst.hp*(y+x-x0);x0=x;v=y;}
   else{
    let f=f0;
-   if(bend){glide*=bend;f*=2**(inst.glide*(1-glide)/12);}
+   if(bend){glide*=bend;f*=2**(inst.glide*glide/12);}
    if(inst.vibrato)f*=1+inst.vibrato[1]*sine(inst.vibrato[0]*t);
    for(let p=0;p<ratios.length;p++){phases[p]+=w*f*ratios[p];v+=amps[p]*sine(phases[p]);}
   }
