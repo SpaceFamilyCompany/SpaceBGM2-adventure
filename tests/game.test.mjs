@@ -9,10 +9,10 @@ test('a stronger hero clears a boss and unlocks the next region at level three',
  let g=applyAction(initialGame(now),{type:'train'},now);g=advanceGame(g,now+10*STEP_MS).game;assert.equal(g.clears.forest,1);assert.ok(g.crystals>=1);assert.equal(g.floor,1);assert.equal(unlocked(g,'cave'),false);g=applyAction(g,{type:'train'},now+10*STEP_MS);assert.equal(unlocked(g,'cave'),true);g=applyAction(g,{type:'zone',zone:'cave'},now+10*STEP_MS);assert.equal(g.zone,'cave');assert.equal(g.floor,1);
 });
 test('underpowered hero retreats without receiving boss rewards',()=>{
- const before=advanceGame(initialGame(now),now+9*STEP_MS).game;const a=advanceGame(before,now+10*STEP_MS);assert.equal(a.game.clears.forest,0);assert.equal(a.game.crystals,before.crystals);assert.equal(a.game.coins,before.coins);assert.equal(a.game.logs[0].kind,'retreat');assert.equal(a.game.floor,1);
+ const before=advanceGame(initialGame(now),now+9*STEP_MS).game;before.equipment={weapon:null,armor:null};const a=advanceGame(before,now+10*STEP_MS);assert.equal(a.game.clears.forest,0);assert.equal(a.game.crystals,before.crystals);assert.equal(a.game.coins,before.coins);assert.equal(a.game.logs[0].kind,'retreat');assert.equal(a.game.floor,1);
 });
 test('offline simulation is capped at eight hours, including after a long absence',()=>{
- const a=advanceGame(initialGame(now),now+OFFLINE_LIMIT*8);assert.equal(a.report.steps,OFFLINE_LIMIT/STEP_MS);assert.equal(a.report.capped,true);assert.equal(a.game.lastAt,now+OFFLINE_LIMIT*8);assert.equal(a.game.logs.length,24);
+ const a=advanceGame(initialGame(now),now+OFFLINE_LIMIT*8);assert.equal(a.report.steps,Math.floor(OFFLINE_LIMIT/STEP_MS));assert.equal(a.report.capped,true);assert.ok(a.game.lastAt>now+OFFLINE_LIMIT*8-STEP_MS&&a.game.lastAt<=now+OFFLINE_LIMIT*8,'keeps only the unfinished part of a floor');assert.equal(a.game.logs.length,24);
 });
 test('rest stops accrual; resuming does not reward the rest period',()=>{
  let g=applyAction(initialGame(now),{type:'toggle'},now);g=advanceGame(g,now+OFFLINE_LIMIT).game;assert.equal(g.coins,60);g=applyAction(g,{type:'toggle'},now+OFFLINE_LIMIT);assert.equal(advanceGame(g,now+OFFLINE_LIMIT+STEP_MS).game.coins,68);

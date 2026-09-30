@@ -1,56 +1,64 @@
 <!doctype html>
 <html lang="ja">
 <head>
- <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
- <meta name="theme-color" content="#101b20"><title>SpaceBGM2｜音の冒険</title>
- <meta name="description" content="音楽と一緒に、小さな冒険を。">
- <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
- <link rel="icon" href="/favicon.svg"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
- <style>/* APP_CSS */</style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1C1A33">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>SpaceBGM</title>
+<link rel="icon" href="favicon.svg"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
+<style>/* APP_CSS */</style>
 </head>
-<body><!-- CHARACTER_SHEET --><div class="shell">
- <header class="app-header">
-  <h1><span aria-hidden="true">✦</span> 音の冒険</h1>
-  <div class="wallet"><span aria-label="ゴールド"><span class="gold" aria-hidden="true">●</span> <b id="coins">—</b><small>G</small></span><span aria-label="星のかけら"><span aria-hidden="true">✧</span> <b id="crystals">—</b></span></div>
- </header>
- <div class="notice" id="offline" role="status"><p id="offlineText"></p><button id="dismissOffline" class="quiet" aria-label="報酬のお知らせを閉じる">閉じる</button></div>
- <div class="notice error" id="error" role="alert"><p id="errorText"></p><button id="retry">再試行</button></div>
- <main>
-  <nav class="screen-nav" aria-label="冒険の画面" role="tablist"></nav>
-  <section class="screen-panel" id="screen-panel-0">
-   <section class="scene-card" aria-label="冒険の様子">
-    <div class="scene" id="scene" data-zone="forest" data-event="travel">
-     <div class="scene-heading"><div><small id="zoneSubtitle">小さな冒険のはじまり</small><h2 id="zoneName">蛍火の森</h2></div><span class="floor" id="floor">1 / 10階</span></div>
-     <div class="scene-top"><span class="badge" id="stateBadge">読込中</span><span id="eventBadge">探索</span></div>
-     <div class="actors"><div class="party"><div><span class="sprite" data-pixel="hero" role="img" aria-label="冒険者ゆっぴ">🧙</span><span class="actorlabel">ゆっぴ</span></div><div id="catActor" style="display:none"><span class="sprite cat" data-pixel="cat" role="img" aria-label="仲間の猫トム">🐈</span><span class="actorlabel" id="catLabel">トム</span></div></div><div class="enemy-group"><span class="enemy" id="enemy" role="img" aria-label="探索中">✨</span><span class="actorlabel" id="enemyName">奥へ続く道</span></div></div>
-     <p class="narration" id="narration">冒険の準備をしています。</p><time id="clock" hidden></time>
-    </div>
-    <div class="journey"><div class="journey-meta"><span id="journeyText">次の探索まで</span><span id="remaining">—秒</span></div><div class="progress" id="progress" role="progressbar" aria-label="次の冒険イベントまで" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="bar"></i></div><button id="toggle" class="quiet" disabled>休む</button></div>
-   </section>
-   <details class="disclosure" id="mapDetails"><summary>行き先を変える<span>3つのダンジョン</span></summary><div class="zone-list" id="zones"></div></details>
-   <details class="disclosure"><summary>冒険の記録<span id="saveStatus">読込中</span></summary><ol class="logs" id="logs"><li>記録を読み込んでいます。</li></ol></details>
-  </section>
-  <section class="screen-panel" id="screen-panel-1" hidden>
-   <div class="page-heading"><p class="eyebrow">旅の仲間</p><h2>ゆっぴを育てる</h2></div>
-   <section class="hero-card"><div class="hero"><span class="portrait" data-pixel="hero" aria-hidden="true"></span><div><h3>ゆっぴ <span id="level">Lv.1</span></h3><p>旋律を探す、小さな冒険者</p></div></div>
-    <div class="hero-stats"><div><span>戦闘力</span><b id="power">—</b><small id="powerBreakdown"></small></div><div><span>このボスの目安</span><b id="recommended">2</b><small>装備でも強くなる</small></div></div>
-    <button class="primary upgrade" id="train" disabled><span>レベルを上げる</span><span id="trainCost">40 G</span></button>
-   </section>
-   <button class="companion" id="hire" disabled><span class="portrait" data-pixel="cat" aria-hidden="true"></span><span><b>トムを仲間に</b><small id="hireText">120 G · 報酬＋20％</small></span><span aria-hidden="true">＋</span></button>
-  </section>
-  <section class="screen-panel" id="screen-panel-2" hidden>
-   <div class="page-heading"><p class="eyebrow">旅の装備袋</p><h2>装備を整える <small id="collection">0 / 6</small></h2></div>
-   <div class="equipment-slots" id="equipmentSlots"></div>
-   <button class="primary best-equip" id="equipBest" disabled>おすすめを装備</button>
-   <h3 class="section-label">持っている装備</h3><div class="inventory" id="inventory"></div>
-   <details class="disclosure"><summary>まだ見つけていない装備<span id="undiscoveredCount"></span></summary><div id="undiscovered" class="inventory"></div><p class="hint">宝箱やボスから発見。重複すると星のかけらになります。</p></details>
-  </section>
- </main>
- <section class="music-dock" id="music" data-playing="false" aria-label="旅の音楽">
-  <div class="music-track"><span class="music-symbol" aria-hidden="true">♫</span><div><b>旅の音楽</b><small id="musicMood">蛍火の森</small></div></div>
-  <button id="sound" aria-pressed="false">音楽を再生</button>
-  <details class="volume-details"><summary aria-label="音量を調整">音量</summary><div class="volume-popover"><label for="volume">音量 <span id="volumeLabel">35％</span></label><input type="range" id="volume" min="0" max="100" value="35"><small>iPhone本体でも調整できます</small><span id="tempo" hidden>88 BPM</span></div></details>
+<body>
+<!-- SPRITE_SHEET -->
+<main class="app">
+ <section class="stage-wrap" aria-label="冒険の様子">
+  <svg id="stage" class="stage" viewBox="32 36 256 144" shape-rendering="crispEdges" role="img" aria-labelledby="sceneText">
+   <g id="bgFar"><use id="far0" width="320" height="180"/><use id="far1" x="320" width="320" height="180"/></g>
+   <g id="laneFar"></g>
+   <g id="laneMid"></g>
+   <g id="bgNear"><use id="near0" width="320" height="180"/><use id="near1" x="320" width="320" height="180"/></g>
+   <g id="actors">
+    <use id="owl" x="240" y="62" width="32" height="32"/>
+    <use id="firefly" x="148" y="64" width="32" height="32"/>
+    <use id="frog" x="232" y="142" width="32" height="32"/>
+    <use id="cat" x="38" y="140" width="32" height="32"/>
+    <g id="heroBack"></g>
+    <use id="hero" x="72" y="138" width="32" height="32"/>
+    <g id="heroFront"></g>
+    <use id="foe" x="196" y="138" width="32" height="32"/>
+   </g>
+   <g id="laneNear"></g>
+   <use id="leaves" x="258" y="150" width="32" height="32"/>
+  </svg>
+  <div class="hud">
+   <p class="place"><b id="floorLabel" class="floor">1F</b><span id="themeName">森の入口</span></p>
+   <p id="saveStatus" class="save" data-state="loading">接続中</p>
+  </div>
  </section>
- <footer>自動保存 · 留守中も最大8時間冒険</footer>
-</div><div class="toast" id="toast" role="status"></div>
-<script>/* APP_JS */</script></body></html>
+
+ <section class="panel">
+  <ol id="rail" class="rail" aria-label="ダンジョンの階（曲の進行）"></ol>
+  <p id="sceneText" class="scene-text">ゆっぴは蛍火の森を進んでいる。</p>
+
+  <div class="controls">
+   <button id="play" class="play" type="button" aria-pressed="false" disabled><span class="play-icon" aria-hidden="true"></span><span id="playLabel">曲を準備中</span></button>
+   <button id="rest" class="rest" type="button">休む</button>
+   <label class="volume" for="volume"><span>音量</span><input id="volume" type="range" min="0" max="100" value="60"></label>
+  </div>
+
+  <dl id="gear" class="gear">
+   <div><dt>武器</dt><dd id="gearWeapon">なし</dd></div>
+   <div><dt>防具</dt><dd id="gearArmor">なし</dd></div>
+  </dl>
+
+  <ul id="logs" class="logs" aria-label="できごと" aria-live="polite"></ul>
+  <p id="error" class="error" hidden></p>
+ </section>
+</main>
+<script>/* APP_JS */</script>
+</body>
+</html>

@@ -1,4 +1,5 @@
-export const STEP_MS = 8000;
+// 1階 = 曲の16拍（88 BPM）。web/score.mjs の floorMs と一致させ、再生位置と冒険の進行をそろえる。
+export const STEP_MS = 10909;
 export const OFFLINE_LIMIT = 8 * 60 * 60 * 1000;
 export const EQUIPMENT = [
  {id:'leaf-blade',zone:'forest',slot:'weapon',name:'若葉の剣',icon:'🗡️',power:1,rarity:'木漏れ日'},
@@ -59,7 +60,7 @@ export function advanceGame(input,now=Date.now()) {
    const items=EQUIPMENT.filter(item=>item.zone===g.zone);
    const missing=items.filter(item=>!g.inventory.includes(item.id));
    const item=(event==='boss'&&missing.length?missing:items)[roll%((event==='boss'&&missing.length)?missing.length:items.length)];
-   if(!g.inventory.includes(item.id)) {g.inventory.push(item.id);report.items.push(item.id);log(g,item.name+'を手に入れた！ 装備袋で付け替えよう。','loot',g.lastAt);}
+   if(!g.inventory.includes(item.id)) {g.inventory.push(item.id);report.items.push(item.id);if(!g.equipment[item.slot])g.equipment[item.slot]=item.id;log(g,item.name+'を手に入れた！ 装備袋で付け替えよう。','loot',g.lastAt);}
    else {g.crystals++;log(g,item.name+'が星のかけら1個に変わった。','loot',g.lastAt);}
   }
  }

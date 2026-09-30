@@ -1,81 +1,50 @@
 # Claude Code 開発引き継ぎ
 
-このリポジトリは、公開中の「SpaceBGM2｜音の冒険」の編集用ソースです。
-主人公は **ゆっぴ**、仲間は猫の **トム**。レトロRPG風のピクセルアニメーションと、音楽に合わせた放置探索のゲームです。
+このリポジトリは「SpaceBGM aka BGMコンシェルジュ」の編集用ソースです。24時間かけっぱなしにできる、冒険が鳴らす音楽アプリ。
+主人公は **ゆっぴ**、仲間は猫の **トム**。コンセプトと遊び方は README.md（ゲーム画面にはタイトルやルールを出さない）。
+
+## 大前提（崩さないこと）
+
+- **世界のすべてが同じリズム。** 足音・攻撃・森の生き物・背景オブジェクトの1コマ1コマが音符で、1コマ = 8分音符。
+- 音と絵は `web/score.mjs` の同じ楽譜から作る。音は「音の鳴るコマ（SOUND_FRAMES）に入った瞬間」だけ鳴り、鳴らない物は動かない。拍に乗らない自由な動きや、絵のない音を足さない。
+- 単調にしない工夫（階ごとのスウィング、区間末のフィル＝ラン／ため、ブレイク小節）は楽譜側で、キャラのコマの並びとして作る。
+- 冒険中の曲 = ダンジョン1周（1〜10階）。1階 = 16拍 = `server/game.mjs` の `STEP_MS`（10909ms）。再生位置がそのまま冒険の進行。`floorMs`・`moodForFloor` とサーバーの一致はテストで確認している。
+- 音は端末内で合成したWAV（Web Worker）を **単一のHTML Audio** でループ再生する。iPhoneのバックグラウンド再生のため、リアルタイム生成やJSタイマーで鳴らす方式にしない。
+- 色は Space Family のブランドカラー（ink #232046 / ink-deep #1C1A33 / ink-panel #3B3470 / lilac #EAE6F5 / field #B9B4D3 / pink #F0A9B9 / cyan #A9DDE2）。
+- MVP はステージ1（蛍火の森）だけ。EXP・レベル・育成・地域選択は画面に出さない（サーバーには残っている）。トムは画面と音では常に同行。
 
 ## すぐに開発する
 
-Node.js 22以降を推奨。外部npm依存はありません。
+Node.js 22以降。外部npm依存はありません。
 
 ```sh
 node build.mjs
 node --test tests/*.test.mjs
-node scripts/preview.mjs 4320
+node scripts/preview.mjs 4320        # http://127.0.0.1:4320/ 。起動時の dist を読むので、再ビルド後は再起動
+node scripts/sprite-preview.mjs      # dist/sprite-preview.html
 ```
 
-プレビュー: http://127.0.0.1:4320/
-別のポートを使う場合は最後の引数を変更してください。
-プレビューはメモリー内のサンプルデータで、全地域・全装備を解放した休憩状態から始まります。再起動すると初期化されます。公開データには接続しません。
-変更後は再ビルドしてプレビューを再起動し、ブラウザーを再読み込みしてください。
-`npm test` は先にビルドが必要です。
-
-## 編集するファイル
+## ファイル
 
 | ファイル | 役割 |
 |---|---|
-| web/page.html | 冒険・育成・装備の3画面と共通音楽操作 |
-| web/app.css | レスポンシブUI、iPhoneのsafe area |
-| web/app.js | 表示更新、保存API、ユーザー操作 |
-| web/navigation.js | タブ・左右スワイプ・キーボード操作 |
-| web/equipment.js | 装備一覧、比較、おすすめ一括装備 |
-| scripts/pixel-characters.mjs | ゆっぴ・トム・敵などのオリジナルドット絵 |
-| web/characters.js / web/characters.css | SVG表示と歩行・戦闘・休憩アニメーション |
-| web/music.js | 単一HTML Audio、Media Session、背景再生 |
-| scripts/music-assets.mjs | 地域・場面ごとのWAV生成 |
-| server/game.mjs | 進行、装備、報酬、旧セーブ移行 |
-| server/worker.mjs | HTTP・保存API、R2のETag競合制御 |
-| server/media.mjs | 音声Range/HEADレスポンス |
-| build.mjs | HTML・画像・音声・APIをWorkerへまとめる |
+| web/score.mjs | 楽譜エンジン（コマ・音符・スクロール・背景オブジェクト配置・合成・WAV）。画面と Worker の両方で同じソースを使う |
+| web/page.html / app.css / app.js | 舞台（SVG、320×180 の世界の中央 256×144 を表示）・階のレール・操作・再生 |
+| scripts/pixel-art.mjs | キャラ・森の生き物・装備の着せ替えパーツ（Codex 制作。32×32、1コマ=8分音符） |
+| scripts/forest-objects.mjs / forest-scene.mjs | 背景オブジェクト（far/mid/near の視差、景色4種）と空・地面の土台（Codex 制作） |
+| server/game.mjs | 進行・装備（空き欄なら拾った装備を自動で着る）・報酬 |
+| server/worker.mjs / server/store.mjs | HTTP・保存API。`/bgm` 配下でも動く。保存は Durable Object（`GameStore`）、テスト・プレビューは R2 互換の `BUCKET` |
+| build.mjs | すべてを `worker/index.js`（と `dist/server/index.js`）にまとめる |
 
-`worker/index.js` と `dist/` は生成物です。ソースを編集して再ビルドしてください。`worker/index.js` は現在Git管理されています。
-
-## 守るべき既存の動作
-
-- 主人公名は「ゆっぴ」。過去の保存ログに残る旧名は履歴として保持します。
-- 保存キー `spacebgm2/owner-game-v1.json` を維持。v1保存はv2に移行し、レベル・通貨・踏破・休憩状態を保持します。
-- 公開版は所有者専用で保存先は1つ。一般公開・複数プレイヤー対応の前に認証と保存先分離が必要です。
-- 音楽は単一のHTML Audioで再生。バックグラウンド中にJSタイマーで音を生成する方式へ戻さないでください。
-- ユーザーから2026-10-01にiPhone実機テスト通過の報告あり。UI再整理後はブラウザー確認済み。着信やOS強制終了後の再生継続は保証しません。
-- スワイプは縦スクロール、画面端ジェスチャー、ボタンやスライダーの操作と干渉させません。
-- 装備ドロップは決定的な計算で、再試行・一括オフライン計算で報酬が変わらないようにしています。
-- テストは現在22件。ゲーム・保存・音声Range・スワイプ・UI参照の整合性を確認します。
+`worker/index.js` と `dist/` は生成物。ドット絵は Codex に `codex exec -s workspace-write` で依頼してきた。依頼時は新規ファイルだけ触らせて衝突を避ける。
 
 ## 公開先
 
-- URL: https://spacebgm2-adventure.spacefamily.chatgpt.site/
-- Sites project: `appgprj_6abca63c65488191831f1487689d4797`
-- 設定: `.openai/hosting.json`、R2 binding: `BUCKET`
-- 直近公開のソース: `b45d461cb6cf32939a188caac0bab33aad3885e6`
-- Sitesソースのリモートは `git.chatgpt-team.site`。GitHubはソース共有用で、GitHubへpushするだけでは公開されません。
-
-公開はSites連携が使える環境で行います。既存プロジェクトを再利用し、新しいSiteを作成しないでください。
-1. ビルド・テストし、ソースをコミット。
-2. Sitesの一時Git認証を使い、そのコミットを既存Sitesリモートのmainへpush。
-3. 同じコミットから作った成果物を梱包。
-
-```sh
-tar -czf site.tar.gz .openai/hosting.json dist/server/index.js
-```
-
-4. Sitesでそのコミットとアーカイブを保存・非公開デプロイし、成功状態を確認。
-
-Sitesのトークンは短期認証です。URL、ファイル、コミット、ログに残さないでください。連携がない場合はローカル開発とGitHubへの保存まで進め、公開はSites連携のあるCodex等へ引き継いでください。
-
-## spefami.com
-
-Sitesへの独自ドメイン登録のみ完了。CloudflareへのログインとDNS設定は未完了です。現在の公開先が切り替わったとは扱わないでください。
-Custom domain ID: `appgdom_6abd46f3e1788191b4b1dabc00a3cf10`
-設定値はSitesから最新を読み取り、既存DNSの用途を確認してから変更します。
+- URL: https://spefami.com/bgm/ （Cloudflare Workers `spacebgm2`、route `spefami.com/bgm*`）
+- `node build.mjs` → テスト → `npx wrangler deploy`
+- spefami.com 本体は別リポジトリ（SpaceFamilySite）の Custom Domain Worker。このルートがその手前で `/bgm` だけを受け取るので、本体には触らない。
+- 保存は1つを全員で共有（アクセス制限なし、ユーザーの選択）。一般公開で複数人が遊ぶなら保存先の分離が必要。
+- 旧公開先（OpenAI Sites: spacebgm2-adventure.spacefamily.chatgpt.site）は旧版のまま。
 
 ## 別プロジェクトに注意
 

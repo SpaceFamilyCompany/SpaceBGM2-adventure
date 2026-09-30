@@ -13,7 +13,8 @@ test('v1 saves preserve progress and paused state when migrating',()=>{
 test('treasure grants equipment; equipping changes boss outcome; unequip reverses it',()=>{
  let g=initialGame(now);g.floor=4;
  g=advanceGame(g,now+STEP_MS).game;assert.equal(g.inventory.length,1);
- const item=EQUIPMENT.find(i=>i.id===g.inventory[0]);g.floor=10;
+ const item=EQUIPMENT.find(i=>i.id===g.inventory[0]);assert.equal(g.equipment[item.slot],item.id,'new gear is worn when the slot is empty');
+ g=applyAction(g,{type:'unequip',slot:item.slot},g.lastAt);g.floor=10;
  assert.equal(advanceGame(g,now+2*STEP_MS).game.clears.forest,0);
  const equipped=applyAction(g,{type:'equip',itemId:item.id},g.lastAt);assert.equal(combatPower(equipped),2);
  assert.equal(advanceGame(equipped,now+2*STEP_MS).game.clears.forest,1);
@@ -28,7 +29,7 @@ test('offline loot matches individual steps, stays bounded, and is not granted t
  const batched=advanceGame(g,now+100*STEP_MS);let single=g;
  for(let i=1;i<=100;i++)single=advanceGame(single,now+i*STEP_MS).game;
  assert.deepEqual(single,batched.game);assert.ok(single.inventory.length<=2);assert.equal(advanceGame(single,single.lastAt).report.items.length,0);
- const capped=advanceGame(g,now+OFFLINE_LIMIT*5);assert.equal(capped.report.steps,OFFLINE_LIMIT/STEP_MS);assert.ok(capped.game.inventory.length<=2);
+ const capped=advanceGame(g,now+OFFLINE_LIMIT*5);assert.equal(capped.report.steps,Math.floor(OFFLINE_LIMIT/STEP_MS));assert.ok(capped.game.inventory.length<=2);
 });
 test('duplicate gear converts to shards and never grows inventory',()=>{
  const g=initialGame(now);g.inventory=EQUIPMENT.filter(i=>i.zone==='forest').map(i=>i.id);g.floor=4;

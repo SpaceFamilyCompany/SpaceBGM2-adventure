@@ -1,0 +1,17 @@
+// Cloudflare Workers: `node build.mjs` の後に `npx wrangler deploy` で spefami.com/bgm/ へ公開する。
+// spefami.com 本体はホームページ（spacefamilysite の Custom Domain）。このルートがその手前で /bgm だけを受け取る。
+{
+  "name": "spacebgm2",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "spefami.com/bgm", "zone_name": "spefami.com" },
+    { "pattern": "spefami.com/bgm/*", "zone_name": "spefami.com" }
+  ],
+  // セーブは Durable Object（SQLite）1つに保存する。R2はこのアカウントで未有効のため使わない。
+  "durable_objects": {
+    "bindings": [{ "name": "GAME", "class_name": "GameStore" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameStore"] }]
+}
