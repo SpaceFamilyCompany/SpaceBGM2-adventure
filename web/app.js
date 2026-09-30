@@ -117,6 +117,33 @@ const sprites={
 const SPOTS={owl:[240,62],firefly:[148,64],frog:[232,142],cat:[38,140],hero:[72,138],foe:[196,138],leaves:[258,150]};
 // 敵の並び（1〜3体）。奥の敵ほど遅れて滑り込む。
 const FOE_X={1:[196],2:[184,222],3:[170,202,236]};
+// 動きのカーブ。役者のコマ（sprite-action-frame）と、そのコマの中の進み具合（0〜1）から、位置のずれ [dx, dy] を返す。
+// すべて拍（コマ）に合わせた形なので、音が鳴る瞬間（着地・斬撃）は必ず決まった位置になる。
+const lerpKeys=(keys,t)=>{for(let i=1;i<keys.length;i++)if(t<=keys[i][0]){const [t0,v0]=keys[i-1],[t1,v1]=keys[i],u=(t-t0)/(t1-t0),e=u*u*(3-2*u);return v0+(v1-v0)*e;}return keys.at(-1)[1];};
+function motion(entry,fraction,beats){
+ if(!entry)return [0,0];
+ const [sprite,action,f]=entry.split('-'),t=(+f)+fraction,half=((+f)%2)+fraction;
+ switch(sprite+'.'+action){
+  // 足が着く（コマ0・2）で一番低く、その間で1〜2ドット浮く
+  case 'hero.walk':return [0,-Math.round(2*Math.sin(Math.PI*half/2))];
+  // 構え → 振りかぶって少し下がる → コマ2で踏み込んで斬る → 戻る
+  case 'hero.attack':return [Math.round(lerpKeys([[0,0],[1,-3],[2,10],[3,6],[4,0]],t)),Math.round(lerpKeys([[0,0],[1.4,-2],[2,0],[4,0]],t))];
+  // 喜んで跳ぶ（コマ0で跳び、コマ2で着地して小さくもう一度）
+  case 'hero.cheer':return [0,-Math.round(t<2?8*Math.sin(Math.PI*t/2):3*Math.sin(Math.PI*(t-2)/2))];
+  case 'cat.walk':return [0,-Math.round(1.5*Math.sin(Math.PI*((((+f)+1)%2)+fraction)/2))];
+  // コマ2〜3で弧を描いて跳び、コマ0で敵に着地（ドン）、コマ1〜2で戻る
+  case 'cat.pounce':return t>=2?[Math.round(26*(t-2)/2),-Math.round(10*Math.sin(Math.PI*(t-2)/2))]:[Math.round(26*(1-Math.min(1,t))),0];
+  // 跳ねる敵: コマ0で着地（音）、コマ2で一番高い
+  case 'slime.bounce':case 'mushling.bounce':case 'beetle.bounce':return [0,-Math.round(8*Math.sin(Math.PI*t/4))];
+  case 'wisp.bounce':return [Math.round(2*Math.sin(Math.PI*t/2)),-Math.round(3*Math.sin(Math.PI*t/4))];
+  // 斬撃が当たると、後ろへはじかれて戻る
+  default:
+   if(action==='hit')return [Math.round(7*(1-t/2)),-Math.round(3*Math.sin(Math.PI*t/2))];
+   // 蛍は 8拍で横に、4拍で縦にゆっくり漂う
+   if(sprite==='firefly')return [Math.round(10*Math.sin(Math.PI*beats/4)),Math.round(5*Math.sin(Math.PI*beats/2))];
+   return [0,0];
+ }
+}
 const stage={
  track:null,ctx:null,moved:null,gearItems:[],segment:-1,last:'',dirty:true,theme:'',fade:null,
  init(){const c=$('stage');this.ctx=c.getContext('2d');this.ctx.imageSmoothingEnabled=false;},
@@ -154,10 +181,15 @@ const stage={
   // 敵は階の頭の4コマで右から滑り込む（楽譜側でもその間は鳴らさない）。
   const count=seg.mood==='battle'?seg.foes:1,foes=[0,1,2].map(k=>{const entry=t.actors['foe'+k]?.[step];if(!entry)return null;const lead=4+k*2,entering=!/^(spark|fire)/.test(entry)&&local<lead;return {entry,x:seg.mood==='rest'?112:FOE_X[count][k]+(entering?Math.round(110*(1-(local+fraction)/lead)**2):0)};}).filter(Boolean);
   const fadeAlpha=this.fade?Math.min(1,(performance.now()-this.fade.start)/1200):1;
-  const sig=[step,Math.round(moved*2),Math.round(moved*4),Math.round(moved*8),foes.map(f=>f.x).join(','),fadeAlpha.toFixed(2),this.theme,this.gearItems.join()].join('|');
+  const beats=(step+fraction)/2,move=id=>motion(t.actors[id]?.[step],fraction,beats);
+  const heroMove=move('hero'),catMove=move('cat'),flyMove=move('firefly');
+  for(const f of foes)f.move=motion(f.entry,fraction,beats);
+  // 守り人の足踏み（コマ0）で、画面がほんの一瞬揺れる
+  const stomp=/^guardian-idle-0/.test(foes[0]?.entry??'')&&fraction<.35?(Math.round(fraction*20)%2?1:-1):0;
+  const sig=[step,Math.round(moved*2),Math.round(moved*4),Math.round(moved*8),foes.map(f=>f.x+':'+f.move).join(','),heroMove,catMove,flyMove,stomp,fadeAlpha.toFixed(2),this.theme,this.gearItems.join()].join('|');
   if(sig===this.last&&!this.dirty)return;
   this.last=sig;this.dirty=false;
-  const ctx=this.ctx;ctx.clearRect(0,0,256,144);
+  const ctx=this.ctx;ctx.setTransform(1,0,0,1,0,stomp);ctx.clearRect(0,-2,256,148);
   // 遠景 → 中景 → 地面 → キャラ → 手前の物 の順に重ねる。
   if(this.fade&&fadeAlpha<1)this.tiles(this.fade.from,'far',moved*2,1);
   this.tiles(this.theme,'far',moved*2,fadeAlpha);
@@ -167,12 +199,14 @@ const stage={
   if(fadeAlpha>=1)this.fade=null;
   // 手前の物はキャラの後ろ。門だけはキャラの前に描いて、くぐって見せる。
   this.lane('near',moved,step,o=>o.id!=='arch');
-  for(const id of ['owl','firefly','frog','cat'])if(t.actors[id])this.put(t.actors[id][step],...SPOTS[id]);
-  const pose=t.actors.hero[step].slice(5);
-  for(const item of this.gearItems)this.put(`eq:${item}-back-${pose}`,...SPOTS.hero);
-  this.put(t.actors.hero[step],...SPOTS.hero);
-  for(const item of this.gearItems)this.put(`eq:${item}-front-${pose}`,...SPOTS.hero);
-  for(const f of [...foes].reverse())this.put(f.entry,f.x,SPOTS.foe[1]);
+  for(const id of ['owl','frog'])this.put(t.actors[id][step],...SPOTS[id]);
+  this.put(t.actors.firefly[step],SPOTS.firefly[0]+flyMove[0],SPOTS.firefly[1]+flyMove[1]);
+  if(t.actors.cat)this.put(t.actors.cat[step],SPOTS.cat[0]+catMove[0],SPOTS.cat[1]+catMove[1]);
+  const pose=t.actors.hero[step].slice(5),hx=SPOTS.hero[0]+heroMove[0],hy=SPOTS.hero[1]+heroMove[1];
+  for(const item of this.gearItems)this.put(`eq:${item}-back-${pose}`,hx,hy);
+  this.put(t.actors.hero[step],hx,hy);
+  for(const item of this.gearItems)this.put(`eq:${item}-front-${pose}`,hx,hy);
+  for(const f of [...foes].reverse())this.put(f.entry,f.x+f.move[0],SPOTS.foe[1]+f.move[1]);
   this.lane('near',moved,step,o=>o.id==='arch');
   this.put(t.actors.leaves[step],...SPOTS.leaves);
  }
