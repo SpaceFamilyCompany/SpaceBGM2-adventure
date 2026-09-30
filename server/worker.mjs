@@ -22,7 +22,7 @@ export default {
     const now=Date.now();const {game:old,etag}=await readGame(env.BUCKET,now);
     const advanced=advanceGame(old,now);let game=advanced.game;
     if(action){try{game=applyAction(game,action,now);}catch(e){return json({error:e.message},400);}}
-    if(!etag||action||game.lastAt!==old.lastAt){
+    if(!etag||action||(old.running&&game.lastAt!==old.lastAt)){
      const stored=await env.BUCKET.put(KEY,JSON.stringify(game),{httpMetadata:{contentType:'application/json'},onlyIf:etag?{etagMatches:etag}:{etagDoesNotMatch:'*'}});
      if(!stored)continue;
     }
