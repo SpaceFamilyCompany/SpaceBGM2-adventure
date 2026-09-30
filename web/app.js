@@ -6,7 +6,6 @@ const THEME_NAMES={entrance:'森の入口',deep:'森の奥',mist:'霧の森',cle
 const MOOD_TEXT={travel:'ゆっぴとトムは、森の奥へ進んでいる。',treasure:'宝箱を見つけた。ふたが鳴っている。',boss:'森の守り人が立ちはだかる。',rest:'焚き火のそばで、ひと休み。'};
 const MONSTER_NAMES={slime:'スライム',mushling:'キノコの子',beetle:'カブトムシ',wisp:'鬼火',guardian:'森の守り人'};
 const CARD_NAME={travel:'道',battle:'戦闘',treasure:'宝箱',boss:'守り人',rest:'休憩'};
-const CARD_MARK={travel:'道',battle:'戦',treasure:'宝',boss:'主'};
 const CARD_MS=cardMs('forest');
 const sceneText=seg=>seg.mood==='battle'?[...new Set(seg.monsters)].map(m=>MONSTER_NAMES[m]).join('と')+(seg.foes>1?'が'+seg.foes+'体':'が')+'現れた。ゆっぴが立ち向かう。':MOOD_TEXT[seg.mood];
 const WORKER_MAIN='onmessage=e=>{const t=composeTrack(e.data.state,e.data.world);const wav=encodeWav(renderTrack(t));postMessage({key:t.key,wav},[wav.buffer]);};';
@@ -130,7 +129,6 @@ const stage={
   const seg=this.track.segments[index];this.segment=index;
   // 景色が変わる時は、空と地面を 1.2 秒かけてクロスフェードする。
   if(seg.theme!==this.theme){if(this.theme)this.fade={from:this.theme,start:performance.now()};this.theme=seg.theme;}
-  $('cardLabel').textContent=CARD_NAME[seg.mood]+(seg.mood==='battle'&&seg.foes>1?' ×'+seg.foes:'');
   $('themeName').textContent=THEME_NAMES[seg.theme]||'';
   $('sceneText').textContent=sceneText(seg);
   player.metadata(seg);
@@ -157,7 +155,6 @@ const stage={
   const count=seg.mood==='battle'?seg.foes:1,foes=[0,1,2].map(k=>{const entry=t.actors['foe'+k]?.[step];if(!entry)return null;const lead=4+k*2,entering=!/^(spark|fire)/.test(entry)&&local<lead;return {entry,x:seg.mood==='rest'?112:FOE_X[count][k]+(entering?Math.round(110*(1-(local+fraction)/lead)**2):0)};}).filter(Boolean);
   const fadeAlpha=this.fade?Math.min(1,(performance.now()-this.fade.start)/1200):1;
   const sig=[step,Math.round(moved*2),Math.round(moved*4),Math.round(moved*8),foes.map(f=>f.x).join(','),fadeAlpha.toFixed(2),this.theme,this.gearItems.join()].join('|');
-  this.cards(t,index,(local+fraction)/SEGMENT_STEPS);
   if(sig===this.last&&!this.dirty)return;
   this.last=sig;this.dirty=false;
   const ctx=this.ctx;ctx.clearRect(0,0,256,144);
@@ -178,28 +175,9 @@ const stage={
   for(const f of [...foes].reverse())this.put(f.entry,f.x,SPOTS.foe[1]);
   this.lane('near',moved,step,o=>o.id==='arch');
   this.put(t.actors.leaves[step],...SPOTS.leaves);
- },
- // イベントカードの列。めくったカードは表、いまのカードは光り、この先は伏せる（最後の守り人だけは見えている）。
- cards(t,index,progress){
-  const deck=snapshot?.deck,card=t.running?t.segments[index].card:snapshot?.game.card??0;if(!deck)return;
-  const p=t.running?Math.round(progress*50)/50:0,key=[snapshot.game.cycle,card,p,t.running].join('|');
-  if(key===this.cardKey)return;this.cardKey=key;
-  $('cards').dataset.resting=String(!t.running);
-  [...$('cards').children].forEach((li,i)=>{
-   const c=deck[i],state=i<card?'done':i===card?'now':'next',open=state!=='next'||c.kind==='boss';
-   const mark=open?CARD_MARK[c.kind]:'?',sub=open&&c.kind==='battle'?'×'+c.foes:'';
-   if(li.dataset.state!==state)li.dataset.state=state;
-   if(li.firstChild.textContent!==mark)li.firstChild.textContent=mark;
-   if(li.lastChild.textContent!==sub)li.lastChild.textContent=sub;
-   li.setAttribute('aria-label',open?(CARD_NAME[c.kind]+(sub?' '+c.foes+'体':'')):'まだ伏せられたカード');
-   li.style.setProperty('--p',state==='now'?String(p):'0');
-  });
  }
 };
 
-function buildCards(){
- $('cards').replaceChildren(...Array.from({length:DECK_SIZE},()=>{const li=document.createElement('li'),b=document.createElement('b'),i=document.createElement('i');li.append(b,i);li.dataset.state='next';return li;}));
-}
 function loop(){
  requestAnimationFrame(loop);
  if(document.hidden)return;
@@ -244,7 +222,6 @@ async function command(action){
  finally{busy=false;render();}
 }
 
-buildCards();
 stage.init();
 sprites.loadBackgrounds();
 player.init();
