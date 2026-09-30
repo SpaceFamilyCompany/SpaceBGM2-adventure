@@ -182,14 +182,28 @@ function showError(text){$('error').textContent=text;$('error').hidden=false;}
 function render(){
  if(!snapshot)return;
  const g=snapshot.game,catalog=snapshot.equipmentCatalog;
- const name=id=>catalog.find(i=>i.id===id)?.name??'なし';
- $('gearWeapon').textContent=name(g.equipment?.weapon);
- $('gearArmor').textContent=name(g.equipment?.armor);
+ wardrobe(g,catalog);
  $('rest').textContent=g.running?'休む':'冒険を再開';
  $('rest').disabled=busy;
  $('logs').replaceChildren(...g.logs.slice(0,4).map(l=>{const li=document.createElement('li'),time=document.createElement('time'),text=document.createElement('span');time.textContent=new Date(l.at).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tokyo'});text.textContent=l.text;li.append(time,text);return li;}));
  stage.setGear(g);
  player.want(g);
+}
+// 装備の着せ替え。持っている装備（と、外した状態）から選ぶ。選ぶと曲が作り直され、見た目と音がその場で変わる。
+let wardrobeKey='';
+function wardrobe(g,catalog){
+ const key=JSON.stringify([g.inventory,g.equipment,busy]);if(key===wardrobeKey)return;wardrobeKey=key;
+ for(const [slot,traits,none] of [['weapon',WEAPONS,'素手'],['armor',ARMORS,'なし']]){
+  const worn=g.equipment?.[slot]??null,owned=catalog.filter(i=>i.slot===slot&&g.inventory.includes(i.id));
+  const choices=[{id:null,name:none},...owned.map(i=>({id:i.id,name:i.name}))];
+  $(slot+'Options').replaceChildren(...choices.map(choice=>{
+   const b=document.createElement('button');b.type='button';b.setAttribute('role','radio');b.textContent=choice.name;
+   b.setAttribute('aria-checked',String(choice.id===worn));b.disabled=busy;
+   b.onclick=()=>{if(choice.id===worn)return;command(choice.id?{type:'equip',itemId:choice.id}:{type:'unequip',slot});};
+   return b;
+  }));
+  $(slot+'Trait').textContent=(traits[worn??'none']||traits.none).trait;
+ }
 }
 function saved(state,text){$('saveStatus').dataset.state=state;$('saveStatus').textContent=text;}
 async function load(){

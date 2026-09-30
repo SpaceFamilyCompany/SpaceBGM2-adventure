@@ -49,10 +49,17 @@ button,input{font:inherit;color:inherit}
 .volume{display:flex;align-items:center;gap:10px;flex:1 1 100%;min-width:0;font-size:13px;color:var(--mist)}
 .volume input{flex:1;min-width:0;accent-color:var(--glow)}
 
-.gear{display:flex;flex-wrap:wrap;gap:8px 20px;margin:0;font-size:13px}
-.gear div{display:flex;gap:8px}
-.gear dt{color:var(--mist);letter-spacing:.08em}
-.gear dd{margin:0}
+/* 装備の着せ替え。武器は攻撃のリズム、防具は曲のジャンル。選ぶと見た目と音がその場で変わる */
+.gear{display:flex;flex-direction:column;gap:12px}
+.gear-title{margin:0;font-family:var(--dot);font-weight:400;font-size:13px;letter-spacing:.1em;color:var(--mist)}
+.gear-slot{display:grid;grid-template-columns:3em minmax(0,1fr);gap:4px 10px;align-items:start}
+.gear-label{padding-top:8px;font-size:13px;color:var(--mist);letter-spacing:.08em}
+.gear-options{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.gear-options button{min-height:36px;padding:0 12px;border:1px solid var(--line);background:var(--ink);font-size:13px;cursor:pointer}
+.gear-options button:hover{background:var(--panel)}
+.gear-options button[aria-checked=true]{border-color:var(--glow);background:var(--panel);color:var(--glow)}
+.gear-options button:disabled{opacity:.5;cursor:progress}
+.gear-trait{grid-column:2;margin:0;font-size:12.5px;line-height:1.6;color:var(--mist);min-height:1.6em}
 
 .logs{display:flex;flex-direction:column;gap:4px;margin:0;padding:12px 0 0;list-style:none;border-top:1px solid var(--line);font-size:13px;color:var(--mist)}
 .logs li{display:flex;gap:10px;min-width:0}

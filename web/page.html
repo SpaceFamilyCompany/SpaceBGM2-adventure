@@ -31,10 +31,19 @@
    <label class="volume" for="volume"><span>音量</span><input id="volume" type="range" min="0" max="100" value="60"></label>
   </div>
 
-  <dl id="gear" class="gear">
-   <div><dt>武器</dt><dd id="gearWeapon">なし</dd></div>
-   <div><dt>防具</dt><dd id="gearArmor">なし</dd></div>
-  </dl>
+  <section class="gear" aria-labelledby="gearTitle">
+   <h2 id="gearTitle" class="gear-title">装備</h2>
+   <div class="gear-slot">
+    <span class="gear-label" id="weaponLabel">武器</span>
+    <div class="gear-options" id="weaponOptions" role="radiogroup" aria-labelledby="weaponLabel"></div>
+    <p class="gear-trait" id="weaponTrait"></p>
+   </div>
+   <div class="gear-slot">
+    <span class="gear-label" id="armorLabel">防具</span>
+    <div class="gear-options" id="armorOptions" role="radiogroup" aria-labelledby="armorLabel"></div>
+    <p class="gear-trait" id="armorTrait"></p>
+   </div>
+  </section>
 
   <ul id="logs" class="logs" aria-label="できごと" aria-live="polite"></ul>
   <p id="error" class="error" hidden></p>

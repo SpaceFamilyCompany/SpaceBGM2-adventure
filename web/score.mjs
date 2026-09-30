@@ -59,15 +59,48 @@ const HERO_ACTION = {travel:'walk',battle:'attack',treasure:'cheer',boss:'attack
 const CAT_ACTION = {travel:'walk',battle:'pounce',treasure:'walk',boss:'pounce',rest:'rest'};
 const FOE = {travel:['spark','twinkle'],battle:['slime','bounce'],treasure:['chest','open'],boss:['guardian','idle'],rest:['fire','burn']};
 
-// 武器はゆっぴの音色、防具はゆっぴの響き。
-const WEAPON_VOICE = {none:'hum', 'leaf-blade':'pluck', 'crystal-staff':'bell', 'moon-blade':'lead'};
-const ARMOR_FX = {none:{}, 'moss-cloak':{lowpass:.35, echo:[.5,.15,.25]}, 'prism-mail':{shimmer:true}, 'star-cloak':{echo:[1,.25,.3]}};
+// 装備の特性。武器は「攻撃のリズム」、防具は「曲のジャンル」。
+// hits: 斬撃のポーズ（コマ2）に入ってから、何コマ後に斬るか（1 = 8分音符、0.5 = 16分音符、2/3 = 三連符）。
+//       音も絵（web/scene.mjs が同じ hits から斬撃のポーズを出す）もこの時刻に合わせるので、ずれない。
+export const WEAPONS = {
+ none:{voice:'hum', hits:[0], trait:'素手。8分音符で1発'},
+ 'leaf-blade':{voice:'pluck', hits:[0,.5], trait:'2連切り。16分音符で2発'},
+ 'crystal-staff':{voice:'bell', hits:[0,2/3,4/3], trait:'三連符の3連撃。和音を駆け上がる'},
+ 'moon-blade':{voice:'lead', hits:[1], trait:'溜め斬り。わざと遅らせて裏拍に重い一撃'}
+};
+// genre: 世界じゅうの楽器の割り当て（map）、和音に7thを足すか、スウィングの足し引き、響き（fx）を変える。
+// どの音も、画面で動いている何かが鳴らしている音のまま（楽器が変わるだけ）。
+export const ARMORS = {
+ none:{genre:'森の素朴', trait:'森の素朴な音', map:{}, fx:{}},
+ 'moss-cloak':{genre:'ローファイ・チル', trait:'ローファイ・チル。7thの和音、エレピ、ブラシ、強めのスウィング', sevenths:true, swing:.08,
+  map:{pad:'epiano', tick:'brush', shaker:'brush', swish:'brush', boing:'sub', boom:'sub', kick:'soft-kick'}, fx:{lowpass:.3, echo:[.5,.15,.25], warm:.5}},
+ 'prism-mail':{genre:'チップチューン', trait:'チップチューン。矩形波、スウィングなし', straight:true,
+  map:{pad:'square-pad', hum:'square', pluck:'square', bell:'square', lead:'square', chime:'square', glass:'square', croak:'square', hoot:'square', 'bell-low':'square', pop:'square', drip:'square', creak:'square',
+   boing:'pulse-bass', boom:'pulse-bass', 'pluck-low':'pulse-bass', tick:'noise-hat', shaker:'noise-hat', swish:'noise-hat', rustle:'noise-hat', wood:'noise-hat', whoosh:'noise-hat', crackle:'noise-hat'}, fx:{}},
+ 'star-cloak':{genre:'シンフォニック', trait:'シンフォニック。弦、ティンパニ、鐘の響き',
+  map:{pad:'strings', kick:'timpani', boom:'timpani', boing:'pizz', 'pluck-low':'pizz', chime:'bell', glass:'bell', tick:'pizz-tick'}, fx:{echo:[1,.25,.3]}}
+};
+// 7thを足した和音（短三和音には短7度、長三和音には長7度）。
+const withSeventh=chord=>[...chord,chord[0]+((chord[1]-chord[0])===3?10:11)];
 
 const INSTRUMENTS = {
  hum:{partials:[[1,1],[2,.12],[3,.05]], attack:.03, decay:.42},
  pluck:{partials:[[1,1],[2,.55],[3,.35],[4,.22],[5,.12]], attack:.002, decay:.2},
  bell:{partials:[[1,1],[2,.45],[3,.18],[4,.1],[6,.05]], attack:.002, decay:.7},
  lead:{partials:[[1,1],[2,.5],[3,.33],[4,.25],[5,.2],[6,.16]], attack:.02, decay:.5, vibrato:[5.5,.006]},
+ // ジャンルの楽器（防具の map で差し替わる）
+ epiano:{partials:[[1,1],[2,.28],[3,.05],[4,.12]], attack:.004, decay:.9, tremolo:[4.5,.25]},
+ sub:{partials:[[1,1],[2,.08]], attack:.006, decay:.3, glide:2},
+ 'soft-kick':{partials:[[1,1]], attack:.004, decay:.1, glide:7},
+ brush:{noise:true, attack:.012, decay:.06, hp:.35},
+ square:{partials:[[1,1],[3,.33],[5,.2],[7,.14],[9,.11]], attack:.001, decay:.22},
+ 'square-pad':{partials:[[1,.7],[3,.23],[5,.14]], attack:.02, decay:.35},
+ 'pulse-bass':{partials:[[1,1],[2,.5],[3,.33],[4,.25]], attack:.001, decay:.14},
+ 'noise-hat':{noise:true, attack:.001, decay:.018, hp:.95},
+ strings:{partials:[[1,1],[2,.5],[3,.33],[4,.25],[5,.2]], attack:.35, decay:2.6, vibrato:[5,.004]},
+ timpani:{partials:[[1,1],[1.5,.25],[2,.2]], attack:.002, decay:.55, glide:3},
+ pizz:{partials:[[1,1],[2,.4],[3,.15]], attack:.002, decay:.12},
+ 'pizz-tick':{partials:[[1,1],[2,.3]], attack:.001, decay:.04},
  chime:{partials:[[1,1],[2,.22],[4,.08]], attack:.002, decay:.35},
  boing:{partials:[[1,1],[2,.25]], attack:.004, decay:.2, glide:3},
  boom:{partials:[[1,1],[2,.3],[3,.15]], attack:.004, decay:.5, glide:7},
@@ -164,22 +197,26 @@ export function layoutArea(world,zone='forest',cycle=0){
 // world: scripts/forest-objects.mjs の {LANES, THEMES, OBJECTS}。area: その束の景色（layoutArea）。
 export function composeTrack(state,world=null,area=world?layoutArea(world,state.zone||'forest',state.cycle||0):null){
  const zone=ZONE_SCORES[state.zone]?state.zone:'forest',score=ZONE_SCORES[zone],tier=levelTier(state.level||1),running=state.running!==false;
- const weapon=WEAPON_VOICE[state.weapon]?state.weapon:'none',armor=ARMOR_FX[state.armor]?state.armor:'none';
+ const weapon=WEAPONS[state.weapon]?state.weapon:'none',armor=ARMORS[state.armor]?state.armor:'none',arms=WEAPONS[weapon],genre=ARMORS[armor];
  const plan=planFor(state,world),steps=plan.length*SEGMENT_STEPS,beat=60/score.bpm,prev=s=>(s+steps-1)%steps;
- const segAt=s=>plan[Math.floor(s/SEGMENT_STEPS)],chordAt=s=>score.chords[(s>>3)%8],local=s=>s%SEGMENT_STEPS;
+ const chords=genre.sevenths?score.chords.map(withSeventh):score.chords;
+ const segAt=s=>plan[Math.floor(s/SEGMENT_STEPS)],chordAt=s=>chords[(s>>3)%8],local=s=>s%SEGMENT_STEPS;
+ // 防具のジャンルでスウィングの量が変わる（チップチューンはまっすぐ）。
+ const swingAt=s=>genre.straight?.5:Math.min(.7,segAt(s).style.swing+(genre.swing||0));
  const inFill=s=>local(s)>=SEGMENT_STEPS-4,inBreak=s=>breakAt(plan,s);
  // スウィング: 裏拍（奇数コマ）を区間ごとの量だけ後ろへ。コマの切り替えも同じ時刻にずらすので、絵もずれない。
- const stepTimes=Array.from({length:steps+1},(_,s)=>s===steps?steps/2*beat:Math.floor(s/2)*beat+(s%2?segAt(s).style.swing*beat:0));
- const tune=melody(zone),notes=[],voice=WEAPON_VOICE[weapon],fx=ARMOR_FX[armor];
+ const stepTimes=Array.from({length:steps+1},(_,s)=>s===steps?steps/2*beat:Math.floor(s/2)*beat+(s%2?swingAt(s)*beat:0));
+ const tune=melody(zone),notes=[],voice=arms.voice,fx=genre.fx;
  // 音程はすべて、その小節の和音の構成音に吸着させ、小節の終わりで閉じる（次の和音へ持ち越さない）。
  const barEnd=step=>stepTimes[Math.min(steps,(step>>3)*8+8)];
- const note=(step,inst,midi,gain,bus='main',dur=.3)=>notes.push({step,inst,midi:midi==null?null:toChord(midi,chordAt(step)),gain,bus,dur,end:barEnd(step)});
- const heroNote=(s,midi,gain)=>{note(s,voice,midi,gain,'hero');if(fx.shimmer)note(s,'chime',midi+12,gain*.3,'hero');if(tier>=2)note(s,voice,midi-12,gain*.3,'hero');if(tier>=3)note(s,voice,chordAt(s)[1]+12,gain*.25,'hero');};
+ // off: そのコマの中で鳴る位置（0〜1。16分音符や三連符の連撃に使う）。楽器は防具のジャンルで差し替わる。
+ const note=(step,inst,midi,gain,bus='main',dur=.3,off=0)=>{step%=steps;notes.push({step,off,inst:genre.map[inst]??inst,midi:midi==null?null:toChord(midi,chordAt(step)),gain,bus,dur,end:barEnd(step)});};
+ const heroNote=(s,midi,gain,off=0)=>{note(s,voice,midi,gain,'hero',.3,off);if(tier>=2)note(s,voice,midi-12,gain*.3,'hero',.3,off);if(tier>=3)note(s,voice,chordAt(s)[1]+12,gain*.25,'hero',.3,off);};
  const melodyAt=s=>tune[(s>>1)%tune.length]+12*segAt(s).style.lift;
  // 各コマで鳴る音。どれも「その役者がそのコマの動きをした音」。
  const sounds={
   'hero.walk':s=>heroNote(s,melodyAt(s),.34),
-  'hero.attack':s=>{heroNote(s,melodyAt(s)+12,.42);note(s,'swish',null,weapon==='none'?.12:.22);if(tier>=1)note(s,voice,melodyAt(s)+19,.14,'hero');},
+  'hero.attack':s=>arms.hits.forEach((h,i)=>{const at=s+Math.floor(h),off=h-Math.floor(h),up=[0,4,7][i]??0;heroNote(at,melodyAt(s)+12+up,i?.34:.42,off);note(at,'swish',null,weapon==='none'?.12:.2,'main',.3,off);}),
   'hero.cheer':s=>heroNote(s,melodyAt(s)+12,.36),
   'hero.rest':s=>note(s,voice,melodyAt(s),.24,'hero',.9),
   'cat.walk':s=>note(s,'tick',null,.16),
@@ -213,13 +250,17 @@ export function composeTrack(state,world=null,area=world?layoutArea(world,state.
  // 敵はカードの頭で右から順に滑り込む（近づく間は跳ねずに鳴らない）。複数の敵は跳ねる拍をずらして掛け合う
  // （1体目: 表拍、2体目: 拍の裏、3体目: 8分遅れ）。ゆっぴの斬撃は1体ずつ順に当たり、当たった敵だけがひるむ。
  const heroHits=s=>fighting(s)&&heroFrame(s)===2,attackNo=s=>{let n=0;for(let k=segAt(s).start;k<s;k++)if(heroHits(k)&&!heroHits(k-1))n++;return n;};
+ // 斬撃のポーズに入ったコマから見て、武器のヒットが続くコマ数（最後のヒットまで）。
+ const hitSpan=Math.floor(arms.hits.at(-1))+1;
+ const swingStart=s=>{for(let d=0;d<hitSpan;d++){const k=(s-d+steps)%steps;if(heroHits(k)&&!heroHits((k-1+steps)%steps)&&segAt(k)===segAt(s))return k;}return -1;};
  for(let k=0;k<3;k++)cast['foe'+k]=Array.from({length:steps},(_,s)=>{
   const seg=segAt(s),count=seg.mood==='battle'?seg.foes:1,[sprite,action]=seg.mood==='battle'?[seg.monsters[k]??'slime','bounce']:FOE[seg.mood];
   if(k>=count)return '';
   const offset=[0,2,1][k];
   if(sprite!=='spark'&&sprite!=='fire'&&local(s)<4+k*2)return `${sprite}-${action}-${[1,2][local(s)%2]}`;
-  if(fighting(s)&&heroFrame(s)===2&&attackNo(s)%count===k)return `${sprite}-hit-0`;
-  if(fighting(s)&&heroFrame(s)===3&&heroFrame(prev(s))===2&&attackNo(prev(s))%count===k)return `${sprite}-hit-1`;
+  const struck=fighting(s)?swingStart(s):-1,after=fighting(s)?swingStart((s-1+steps)%steps):-1;
+  if(struck>=0&&attackNo(struck)%count===k&&s-struck>=Math.floor(arms.hits[0]))return `${sprite}-hit-0`;
+  if(struck<0&&after>=0&&attackNo(after)%count===k)return `${sprite}-hit-1`;
   if(sprite==='spark'&&(s>>3)%4<2)return `${sprite}-${action}-3`;
   return `${sprite}-${action}-${(s+4-offset)%4}`;
  });
@@ -245,7 +286,7 @@ export function composeTrack(state,world=null,area=world?layoutArea(world,state.
  // 夜風（背景の空気）。小節の頭で和音がゆっくり息をする。
  for(let s=0;s<steps;s+=8)chordAt(s).forEach(n=>note(s,'pad',n+12,segAt(s).mood==='rest'||inBreak(s)?.05:.035,'main',2.2));
  return {key:trackKey({...state,zone,weapon,armor}),zone,bpm:score.bpm,running,
-  cycle:state.cycle||0,segments:plan.map(({card,mood,foes,monsters,theme,start})=>({card,mood,foes,monsters,theme,start})),steps,stepTimes,duration:stepTimes[steps],moving,scrollBase,notes,actors:cast,objects,fx};
+  weapon,armor,hits:arms.hits,genre:genre.genre,chords,cycle:state.cycle||0,segments:plan.map(({card,mood,foes,monsters,theme,start})=>({card,mood,foes,monsters,theme,start})),steps,stepTimes,duration:stepTimes[steps],moving,scrollBase,notes,actors:cast,objects,fx};
 }
 
 // エリアの帯から、この曲で画面に映る物を取り出し、各コマの動きと音を決める。
@@ -274,9 +315,10 @@ function sceneObjects(world,area,moved,scrollBase,steps,note,chordAt){
 // 楽譜を波形にする。末尾からはみ出た余韻は先頭へ回し込み、ループの継ぎ目を消す。
 export function renderTrack(track,rate=MUSIC_RATE){
  const len=Math.round(track.duration*rate),buses={main:new Float32Array(len),hero:new Float32Array(len)};
- track.notes.forEach((n,i)=>{const start=Math.round(track.stepTimes[n.step]*rate);voice(buses[n.bus],n,INSTRUMENTS[n.inst],start,rate,i,Math.round(n.end*rate)-start);});
+ track.notes.forEach((n,i)=>{const t=track.stepTimes[n.step]+(n.off||0)*(track.stepTimes[n.step+1]-track.stepTimes[n.step]),start=Math.round(t*rate);voice(buses[n.bus],n,INSTRUMENTS[n.inst],start,rate,i,Math.round(n.end*rate)-start);});
  const beat=60/track.bpm;
  if(track.fx.lowpass)lowpass(buses.hero,track.fx.lowpass);
+ if(track.fx.warm)lowpass(buses.main,track.fx.warm);
  if(track.fx.echo)echo(buses.hero,Math.round(track.fx.echo[0]*beat*rate),track.fx.echo[1],track.fx.echo[2]);
  const out=new Float32Array(len);
  for(let n=0;n<len;n++)out[n]=Math.tanh((buses.main[n]+buses.hero[n])*1.2)*.9;

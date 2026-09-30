@@ -18,8 +18,6 @@ export function motion(entry,fraction,beats){
  switch(sprite+'.'+action){
   // 足が着く（コマ0・2）で一番低く、その間で1〜2ドット浮く
   case 'hero.walk':return [0,-Math.round(2*Math.sin(Math.PI*half/2))];
-  // 構え → 振りかぶって少し下がる → コマ2で踏み込んで斬る → 戻る
-  case 'hero.attack':return [Math.round(lerpKeys([[0,0],[1,-3],[2,10],[3,6],[4,0]],t)),Math.round(lerpKeys([[0,0],[1.4,-2],[2,0],[4,0]],t))];
   // 喜んで跳ぶ（コマ0で跳び、コマ2で着地して小さくもう一度）
   case 'hero.cheer':return [0,-Math.round(t<2?8*Math.sin(Math.PI*t/2):3*Math.sin(Math.PI*(t-2)/2))];
   case 'cat.walk':return [0,-Math.round(1.5*Math.sin(Math.PI*((((+f)+1)%2)+fraction)/2))];
@@ -35,6 +33,17 @@ export function motion(entry,fraction,beats){
    if(sprite==='firefly')return [Math.round(10*Math.sin(Math.PI*beats/4)),Math.round(5*Math.sin(Math.PI*beats/2))];
    return [0,0];
  }
+}
+
+// 攻撃のポーズと踏み込み。武器のヒット（hits: 斬撃のポーズに入ってから何コマ後に斬るか）の時刻に、斬撃のポーズ（コマ2）と
+// 踏み込みの山が来る。連撃ではヒットの間に一瞬構え直す。音も同じ hits から鳴るので、斬った絵と斬った音は同じ瞬間。
+export function attackPose(frame,fraction,hits){
+ const t=frame+fraction,times=hits.map(h=>2+h),last=times.at(-1);
+ const striking=times.some(h=>t>=h&&t<h+.35);
+ const pose=striking?2:t<times[0]?(t<1?0:1):t<last+.35?1:3;
+ const lunge=Math.max(0,...times.map(h=>10*Math.exp(-(((t-h)/.3)**2))));
+ const windup=t<times[0]?-3*Math.min(1,t/1):0;
+ return {pose,dx:Math.round(lunge+windup),dy:Math.round(-2*Math.min(1,Math.max(0,times[0]-t)))};
 }
 
 // 歩いた量（コマ数）の累計。曲ごとに1度だけ作る。
@@ -70,10 +79,14 @@ export function sceneAt(track,seconds,gear=[]){
  at('owl',SPOTS.owl);at('frog',SPOTS.frog);
  at('firefly',SPOTS.firefly,motion(actor('firefly'),fraction,beats));
  at('cat',SPOTS.cat,motion(actor('cat'),fraction,beats));
- const [hdx,hdy]=motion(actor('hero'),fraction,beats),hx=SPOTS.hero[0]+hdx,hy=SPOTS.hero[1]+hdy,pose=actor('hero').slice(5);
+ // 攻撃中は、武器のヒットに合わせてポーズ（コマ）と踏み込みを決める。
+ let heroKey=actor('hero'),[hdx,hdy]=motion(heroKey,fraction,beats);
+ const [,heroAction,heroFrame]=heroKey.split('-');
+ if(heroAction==='attack'){const a=attackPose(+heroFrame,fraction,track.hits||[0]);heroKey='hero-attack-'+a.pose;hdx=a.dx;hdy=a.dy;}
+ const hx=SPOTS.hero[0]+hdx,hy=SPOTS.hero[1]+hdy,pose=heroKey.slice(5);
  const layer=side=>gear.filter(g=>g.endsWith(':'+side)).map(g=>g.split(':')[0]);
  for(const item of layer('back'))sprite(`eq:${item}-back-${pose}`,hx,hy);
- sprite(actor('hero'),hx,hy);
+ sprite(heroKey,hx,hy);
  for(const item of layer('front'))sprite(`eq:${item}-front-${pose}`,hx,hy);
  // 敵（焚き火・道の光も同じ枠）。敵はカードの頭で右から順に滑り込む（楽譜側でもその間は鳴らさない）。
  const count=seg.mood==='battle'?seg.foes:1;

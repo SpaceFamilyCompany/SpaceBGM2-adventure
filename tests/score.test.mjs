@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {composeTrack,renderTrack,encodeWav,stepAt,secondsForCard,cardMs,deckFor,toChord,layoutArea,SOUND_FRAMES,SEGMENT_STEPS,DECK_SIZE,MUSIC_RATE,HERO_X} from '../web/score.mjs';
+import {composeTrack,renderTrack,encodeWav,stepAt,secondsForCard,cardMs,deckFor,toChord,layoutArea,SOUND_FRAMES,SEGMENT_STEPS,DECK_SIZE,MUSIC_RATE,HERO_X,WEAPONS,ARMORS} from '../web/score.mjs';
+import {sceneAt} from '../web/scene.mjs';
 import {SOUND_FRAMES as ART_FRAMES} from '../scripts/pixel-art.mjs';
 import {MONSTER_SPRITES} from '../scripts/monsters.mjs';
 import * as world from '../scripts/forest-objects.mjs';
@@ -29,7 +30,7 @@ test('every deck is shuffled differently but always starts on the road and ends 
 });
 
 test('every party sound starts exactly when a character enters a sounding frame',()=>{
- const t=composeTrack(run,world),heroSteps=new Set(t.notes.filter(n=>n.bus==='hero').map(n=>n.step));
+ const t=composeTrack({...run,weapon:null},world),heroSteps=new Set(t.notes.filter(n=>n.bus==='hero').map(n=>n.step));
  for(const s of heroSteps){const [,action,frame]=t.actors.hero[s].split('-');assert.ok(SOUND_FRAMES['hero.'+action].includes(+frame),'hero sound at step '+s);assert.notEqual(t.actors.hero[s],t.actors.hero[(s+t.steps-1)%t.steps]);}
  for(let s=1;s<t.steps;s++)if(t.actors.hero[s]===t.actors.hero[s-1])assert.ok(!heroSteps.has(s));
  // 森の生き物の待機（idle）は音の出ないコマだけ。守り人の idle は足踏み（地響き）なので対象外。
@@ -85,12 +86,39 @@ test('same state renders identical audio; gear changes the timbre but not the ti
 
 test('every pitched note is a tone of its bar chord and stops ringing when the chord changes',()=>{
  assert.equal(toChord(65,[52,55,59]),64,'F snaps to E over E minor');assert.equal(toChord(66,[52,55,59]),67);
- const chords=[[52,55,59],[48,52,55],[43,47,50],[50,54,57],[52,55,59],[48,52,55],[45,48,52],[47,51,54]];
- for(const state of [run,{...run,running:false},{...run,cycle:7,weapon:'crystal-staff',armor:'star-cloak'}]){
-  const t=composeTrack(state,world);
+ for(const state of [run,{...run,running:false},{...run,cycle:7,weapon:'crystal-staff',armor:'star-cloak'},{...run,armor:'prism-mail'}]){
+  const t=composeTrack(state,world),chords=t.chords;
   for(const n of t.notes){
    if(n.midi!=null)assert.ok(chords[(n.step>>3)%8].map(x=>x%12).includes(n.midi%12),`${n.inst} midi ${n.midi} at step ${n.step} is outside its chord`);
    assert.ok(n.end<=t.stepTimes[Math.min(t.steps,((n.step>>3)+1)*8)]+1e-9,'note ends with its bar');
   }
  }
+});
+
+test('weapons change the attack rhythm, and the slash pose lands exactly on every hit',()=>{
+ let cycle=0;while(!deckFor(cycle).some(c=>c.kind==='battle'))cycle++;
+ for(const [weapon,{hits}] of Object.entries(WEAPONS)){
+  const t=composeTrack({...run,cycle,weapon},world),seg=t.segments.find(s=>s.mood==='battle');
+  assert.deepEqual(t.hits,hits);
+  const swing=seg.start+10; // 攻撃の3周目、斬撃のポーズに入るコマ
+  assert.equal(t.actors.hero[swing],'hero-attack-2');
+  const hitNotes=t.notes.filter(n=>n.bus==='hero'&&n.step>=swing&&n.step<swing+2&&n.gain>.3).map(n=>n.step-swing+n.off);
+  assert.deepEqual(hitNotes.map(x=>+x.toFixed(3)),hits.map(h=>+h.toFixed(3)),weapon+' hits');
+  // その瞬間の絵は斬撃のポーズ（コマ2）
+  for(const h of hits){const step=swing+Math.floor(h),off=h-Math.floor(h),sec=t.stepTimes[step]+off*(t.stepTimes[step+1]-t.stepTimes[step])+.001;
+   assert.ok(sceneAt(t,sec).items.some(i=>i.key==='hero-attack-2'),weapon+' shows the slash at hit '+h);}
+ }
+});
+
+test('armor changes the genre: instruments, chords and swing',()=>{
+ const plain=composeTrack({...run,armor:null},world),lofi=composeTrack({...run,armor:'moss-cloak'},world),chip=composeTrack({...run,armor:'prism-mail'},world),orch=composeTrack({...run,armor:'star-cloak'},world);
+ const insts=t=>new Set(t.notes.map(n=>n.inst));
+ assert.equal(lofi.genre,'ローファイ・チル');assert.ok(insts(lofi).has('epiano')&&insts(lofi).has('brush'));assert.equal(lofi.chords[0].length,4,'7th chords');
+ assert.ok(lofi.stepTimes[1]-lofi.stepTimes[0]>plain.stepTimes[1]-plain.stepTimes[0],'lo-fi swings harder');
+ assert.equal(chip.genre,'チップチューン');for(const i of insts(chip))assert.ok(['square','square-pad','pulse-bass','noise-hat','kick'].includes(i),'chiptune instrument '+i);
+ assert.ok(Math.abs((chip.stepTimes[1]-chip.stepTimes[0])-(chip.stepTimes[2]-chip.stepTimes[1]))<1e-9,'chiptune is straight');
+ assert.equal(orch.genre,'シンフォニック');assert.ok(insts(orch).has('strings')&&insts(orch).has('timpani'));
+ // ジャンルが変わっても、動きの並びは同じ（楽器が変わるだけ）
+ assert.deepEqual(lofi.actors,plain.actors);
+ for(const id of Object.keys(ARMORS))assert.ok(ARMORS[id].trait);for(const id of Object.keys(WEAPONS))assert.ok(WEAPONS[id].trait);
 });
