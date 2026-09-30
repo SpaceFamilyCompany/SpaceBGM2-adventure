@@ -1,15 +1,12 @@
-const screenNames=['ダンジョン','ステータス','装備'];
-const main=document.querySelector('main'),layout=document.querySelector('.layout'),sidebar=document.querySelector('.right');
-const screenPanels=[document.createElement('section'),document.createElement('section'),document.querySelector('.equipment-card')];
-screenPanels[0].append(layout);
-screenPanels[1].append(sidebar.lastElementChild,document.querySelector('.bottom'));
-const screenNav=document.createElement('nav');screenNav.className='screen-nav';screenNav.setAttribute('aria-label','冒険の画面');screenNav.setAttribute('role','tablist');
+const screenNames=['冒険','育成','装備'];
+const main=document.querySelector('main');
+const screenPanels=[0,1,2].map(i=>document.querySelector('#screen-panel-'+i));
+const screenNav=document.querySelector('.screen-nav');
 const screenButtons=screenNames.map((name,index)=>{
  const button=document.createElement('button');button.textContent=name;button.id='screen-tab-'+index;button.setAttribute('role','tab');button.setAttribute('aria-controls','screen-panel-'+index);button.onclick=()=>selectScreen(index);screenNav.append(button);
  const panel=screenPanels[index];panel.id='screen-panel-'+index;panel.classList.add('screen-panel');panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',button.id);panel.tabIndex=0;
  return button;
 });
-main.replaceChildren(screenNav,...screenPanels);
 let currentScreen=0;
 function selectScreen(index,focus=false){
  currentScreen=Math.max(0,Math.min(2,index));
@@ -23,7 +20,7 @@ screenNav.addEventListener('keydown',event=>{
 let swipeStart=null;
 main.addEventListener('touchstart',event=>{
  swipeStart=null;
- if(event.touches.length!==1||event.target.closest('button,input,a,select,textarea'))return;
+ if(event.touches.length!==1||event.target.closest('button,input,a,select,textarea,summary'))return;
  const touch=event.touches[0];
  if(touch.clientX<24||touch.clientX>innerWidth-24)return;
  swipeStart={x:touch.clientX,y:touch.clientY};

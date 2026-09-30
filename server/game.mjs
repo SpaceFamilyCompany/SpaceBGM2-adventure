@@ -25,7 +25,7 @@ export const ZONES = [
  {id:'castle',name:'月影の古城',subtitle:'忘れられた旋律を探して',level:5,mult:3,icon:'🏰',enemy:'影の騎士',boss:'月影の竜',bpm:108}
 ];
 export function initialGame(now = Date.now()) {
- return {version:2,inventory:[],equipment:{weapon:null,armor:null},coins:60,crystals:0,level:1,companion:false,zone:'forest',floor:1,clears:{forest:0,cave:0,castle:0},running:true,lastAt:now,steps:0,totalCoins:0,logs:[{id:0,text:'ルウは蛍火の森へ出発した。',kind:'travel',at:now}]};
+ return {version:2,inventory:[],equipment:{weapon:null,armor:null},coins:60,crystals:0,level:1,companion:false,zone:'forest',floor:1,clears:{forest:0,cave:0,castle:0},running:true,lastAt:now,steps:0,totalCoins:0,logs:[{id:0,text:'ゆっぴは蛍火の森へ出発した。',kind:'travel',at:now}]};
 }
 export function unlocked(g,id) {
  const i=ZONES.findIndex(z=>z.id===id);
@@ -69,9 +69,10 @@ export function advanceGame(input,now=Date.now()) {
 export function applyAction(input,action,now=Date.now()) {
  const {game:g}=advanceGame(input,now);
  switch(action.type) {
+  case 'equipBest': for(const slot of ['weapon','armor']){const best=EQUIPMENT.filter(item=>item.slot===slot&&g.inventory.includes(item.id)).sort((a,b)=>b.power-a.power)[0];if(best)g.equipment[slot]=best.id;}log(g,'おすすめの装備を身につけた。','equip',now);break;
   case 'equip': {const item=EQUIPMENT.find(item=>item.id===action.itemId);if(!item||!g.inventory.includes(item.id))throw new Error('持っている装備を選んでください。');g.equipment[item.slot]=item.id;log(g,item.name+'を装備した。','equip',now);break;}
   case 'unequip': if(!['weapon','armor'].includes(action.slot))throw new Error('不明な装備欄です。');g.equipment[action.slot]=null;break;
-  case 'train': {const price=cost(g);if(g.coins<price) throw new Error('ゴールドが足りません。');if(g.level>=30)throw new Error('レベルは上限です。');g.coins-=price;g.level++;log(g,'ルウがLv.'+g.level+'に成長した。','level',now);break;}
+  case 'train': {const price=cost(g);if(g.coins<price) throw new Error('ゴールドが足りません。');if(g.level>=30)throw new Error('レベルは上限です。');g.coins-=price;g.level++;log(g,'ゆっぴがLv.'+g.level+'に成長した。','level',now);break;}
   case 'hire': if(g.companion)throw new Error('トムはもう仲間です。');if(g.coins<120)throw new Error('ゴールドが足りません。');g.coins-=120;g.companion=true;log(g,'白キジ猫のトムが仲間になった！ 報酬が20％増える。','level',now);break;
   case 'zone': if(!unlocked(g,action.zone))throw new Error('まだこの場所には行けません。');if(action.zone!==g.zone){g.zone=action.zone;g.floor=1;g.lastAt=now;log(g,ZONES.find(z=>z.id===g.zone).name+'へ旅立った。','travel',now);}break;
   case 'toggle':g.running=!g.running;g.lastAt=now;log(g,g.running?'冒険を再開した。':'焚き火でひと休み。','travel',now);break;

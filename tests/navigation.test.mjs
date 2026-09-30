@@ -2,8 +2,8 @@ import test from 'node:test';import assert from 'node:assert/strict';import vm f
 const source=await readFile('web/navigation.js','utf8');
 function setup(){
  const handlers={};const element=()=>({children:[],attrs:{},classList:{add(){}},setAttribute(k,v){this.attrs[k]=v;},append(...items){this.children.push(...items);},replaceChildren(...items){this.children=items;},addEventListener(name,fn){handlers[name]=fn;},focus(){}});
- const main=element(),layout=element(),sidebar=element(),gear=element(),bottom=element();sidebar.lastElementChild=element();
- const map={main,'.layout':layout,'.right':sidebar,'.equipment-card':gear,'.bottom':bottom};
+ const main=element(),nav=element(),panels=[element(),element(),element()];main.children=[nav,...panels];
+ const map={main,'.screen-nav':nav,...Object.fromEntries(panels.map((p,i)=>['#screen-panel-'+i,p]))};
  const document={querySelector:s=>map[s],createElement:element};vm.runInNewContext(source,{document,innerWidth:390});
  const selected=()=>main.children[0].children.findIndex(b=>b.attrs['aria-selected']==='true');
  const touch=(type,x,y,control=false,count=1)=>handlers[type]({touches:Array.from({length:count},()=>({clientX:x,clientY:y})),changedTouches:[{clientX:x,clientY:y}],target:{closest:()=>control}});

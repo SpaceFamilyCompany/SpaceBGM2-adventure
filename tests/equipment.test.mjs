@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {initialGame,advanceGame,applyAction,combatPower,EQUIPMENT,STEP_MS,OFFLINE_LIMIT} from '../server/game.mjs';
 const now=1000000;
+test('recommended equipment selects only owned gear and keeps currency unchanged',()=>{
+ const g=initialGame(now);g.inventory=['leaf-blade','crystal-staff','moss-cloak'];
+ const next=applyAction(g,{type:'equipBest'},now);assert.deepEqual(next.equipment,{weapon:'crystal-staff',armor:'moss-cloak'});assert.equal(next.coins,g.coins);assert.equal(next.crystals,g.crystals);assert.equal(combatPower(next),4);assert.deepEqual(g.equipment,{weapon:null,armor:null});
+});
 test('v1 saves preserve progress and paused state when migrating',()=>{
  const old={...initialGame(now),version:1,coins:9876,level:8,running:false};delete old.inventory;delete old.equipment;
  const {game}=advanceGame(old,now);assert.equal(game.version,2);assert.equal(game.coins,9876);assert.equal(game.level,8);assert.equal(game.running,false);assert.deepEqual(game.inventory,[]);assert.equal(old.version,1);
