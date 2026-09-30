@@ -139,7 +139,8 @@ export function layoutArea(world,zone='forest',cycle=0){
  const r=rng(zone+':area:'+cycle),lanes={};
  for(const [lane,spec] of Object.entries(world.LANES)){
   const pxPerStep=spec.pxPerBeat/2,period=total*pxPerStep,items=[];
-  const themeAt=x=>{const m=((x-VIEW_RIGHT)/pxPerStep%total+total)%total,s=Math.min(steps-1,moved.findIndex(v=>v>=m));return plan[Math.floor(Math.max(0,s)/SEGMENT_STEPS)].theme;};
+  // 束の頭から見えている物（x が画面の右端より手前）は、最初のカードの景色にする（束の終わりの景色を回り込ませない）。
+  const themeAt=x=>{const m=Math.min(total,Math.max(0,(x-VIEW_RIGHT)/pxPerStep)),s=Math.min(steps-1,moved.findIndex(v=>v>=m));return plan[Math.floor(Math.max(0,s)/SEGMENT_STEPS)].theme;};
   const arch=world.OBJECTS.arch;
   // 門は、道から道へ歩き続けるカードの境目だけ（立ち止まるカードの間は、ゆっぴの上に門が居座らないように）。
   if(lane==='near'&&arch)for(const seg of plan)if(seg.mood==='travel'&&seg.index>0&&plan[seg.index-1].mood==='travel')items.push({id:'arch',x:HERO_X-arch.width/2+moved[seg.start]*pxPerStep});

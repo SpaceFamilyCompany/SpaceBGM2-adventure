@@ -9,6 +9,8 @@ import {forestScene} from './scripts/forest-scene.mjs';
 
 // 楽譜エンジンは画面（コマ番号）と Web Worker（音の合成）の両方で同じソースを使う。
 const score=(await readFile('web/score.mjs','utf8')).replaceAll('export ','');
+// 舞台の中身（何をどこに描くか）。画面だけで使う。import 行は外して楽譜エンジンの後ろにつなげる。
+const scene=(await readFile('web/scene.mjs','utf8')).replace(/^import .*$/m,'').replaceAll('export ','');
 // 背景オブジェクトの設定（絵のグリッドは除く）と、装備ごとの重ねレイヤー。
 const world={LANES,THEMES,OBJECTS:Object.fromEntries(Object.entries(OBJECTS).map(([id,{frames,...o}])=>[id,o]))};
 const equipLayers=Object.fromEntries(Object.entries(EQUIPMENT_LAYERS).map(([id,layers])=>[id,Object.keys(layers)]));
@@ -26,7 +28,7 @@ const art={palette:PALETTE,grids,bg};
 
 const css=await readFile('web/app.css','utf8');
 const app='const SCORE_SOURCE='+JSON.stringify(score)+';\nconst WORLD='+JSON.stringify(world)+';\nconst EQUIP_LAYERS='+JSON.stringify(equipLayers)+';\nconst ART='+JSON.stringify(art)+';\n'
- +(await readFile('web/app.js','utf8')).replace('/* SCORE_JS */',()=>score);
+ +(await readFile('web/app.js','utf8')).replace('/* SCORE_JS */',()=>score).replace('/* SCENE_JS */',()=>scene);
 const html=(await readFile('web/page.html','utf8')).replace('/* APP_CSS */',()=>css).replace('/* APP_JS */',()=>app);
 
 const game=(await readFile('server/game.mjs','utf8')).replaceAll('export ','');

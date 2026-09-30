@@ -1,6 +1,7 @@
 'use strict';
 // build.mjs が先頭に SCORE_SOURCE（楽譜エンジンのソース）・WORLD（背景オブジェクトの設定）・EQUIP_LAYERS・ART（ドット絵）を入れる。
 /* SCORE_JS */
+/* SCENE_JS */
 const $=id=>document.getElementById(id);
 const THEME_NAMES={entrance:'森の入口',deep:'森の奥',mist:'霧の森',clearing:'守り人の広場'};
 const MOOD_TEXT={travel:'ゆっぴとトムは、森の奥へ進んでいる。',treasure:'宝箱を見つけた。ふたが鳴っている。',boss:'森の守り人が立ちはだかる。',rest:'焚き火のそばで、ひと休み。'};
@@ -58,7 +59,8 @@ const player={
   if(!t.running)return performance.now()/1000%t.duration;
   const g=snapshot.game;return secondsForCard(t,g.card,(Date.now()+offset-g.lastAt)/CARD_MS);
  },
- visual(){return this.track??this.tracks.get(this.wanted)??null;},
+ // 描く楽譜: 再生中は鳴っている曲、止まっている間はサーバーの状態に合う曲（できていれば）。
+ visual(){return !this.audio.paused&&this.track?this.track:this.tracks.get(this.wanted)??this.track??null;},
  clock(){return !this.audio.paused&&this.track?this.audio.currentTime:this.target();},
  // 通信で分かった進み具合と再生位置がずれていたら合わせる（冒険中のみ）。
  align(){
@@ -90,8 +92,18 @@ metadata(seg){
  }
 };
 
-// 舞台。すべて「いまの曲のコマ番号」から描くので、音と動きがずれない。
-// Canvas に描く。ドット絵は起動時に1度だけ小さな画像にしておき、毎回は貼るだけ。変化があった時だけ描き直す。
+// なめらかな時計。音声の再生位置は端末によって飛び飛びにしか進まないので、
+// 最後に分かった位置から performance.now() で補って毎フレーム進め、実際の位置と 60ms 以上ずれたら合わせ直す。
+const smooth={
+ base:0,at:0,duration:0,
+ now(seconds,duration){
+  const t=performance.now(),predicted=this.base+(t-this.at)/1000;
+  if(duration!==this.duration||Math.abs(predicted-seconds)>.06){this.base=seconds;this.at=t;this.duration=duration;return seconds;}
+  return predicted%duration;
+ }
+};
+
+// ドット絵は起動時に1度だけ小さな画像にしておき、毎回は貼るだけ。
 const sprites={
  cache:new Map(),bg:new Map(),
  rgba:Object.fromEntries(Object.entries(ART.palette).map(([ch,hex])=>[ch,[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)]])),
@@ -114,101 +126,47 @@ const sprites={
   }
  }
 };
-const SPOTS={owl:[240,62],firefly:[148,64],frog:[232,142],cat:[38,140],hero:[72,138],foe:[196,138],leaves:[258,150]};
-// 敵の並び（1〜3体）。奥の敵ほど遅れて滑り込む。
-const FOE_X={1:[196],2:[184,222],3:[170,202,236]};
-// 動きのカーブ。役者のコマ（sprite-action-frame）と、そのコマの中の進み具合（0〜1）から、位置のずれ [dx, dy] を返す。
-// すべて拍（コマ）に合わせた形なので、音が鳴る瞬間（着地・斬撃）は必ず決まった位置になる。
-const lerpKeys=(keys,t)=>{for(let i=1;i<keys.length;i++)if(t<=keys[i][0]){const [t0,v0]=keys[i-1],[t1,v1]=keys[i],u=(t-t0)/(t1-t0),e=u*u*(3-2*u);return v0+(v1-v0)*e;}return keys.at(-1)[1];};
-function motion(entry,fraction,beats){
- if(!entry)return [0,0];
- const [sprite,action,f]=entry.split('-'),t=(+f)+fraction,half=((+f)%2)+fraction;
- switch(sprite+'.'+action){
-  // 足が着く（コマ0・2）で一番低く、その間で1〜2ドット浮く
-  case 'hero.walk':return [0,-Math.round(2*Math.sin(Math.PI*half/2))];
-  // 構え → 振りかぶって少し下がる → コマ2で踏み込んで斬る → 戻る
-  case 'hero.attack':return [Math.round(lerpKeys([[0,0],[1,-3],[2,10],[3,6],[4,0]],t)),Math.round(lerpKeys([[0,0],[1.4,-2],[2,0],[4,0]],t))];
-  // 喜んで跳ぶ（コマ0で跳び、コマ2で着地して小さくもう一度）
-  case 'hero.cheer':return [0,-Math.round(t<2?8*Math.sin(Math.PI*t/2):3*Math.sin(Math.PI*(t-2)/2))];
-  case 'cat.walk':return [0,-Math.round(1.5*Math.sin(Math.PI*((((+f)+1)%2)+fraction)/2))];
-  // コマ2〜3で弧を描いて跳び、コマ0で敵に着地（ドン）、コマ1〜2で戻る
-  case 'cat.pounce':return t>=2?[Math.round(26*(t-2)/2),-Math.round(10*Math.sin(Math.PI*(t-2)/2))]:[Math.round(26*(1-Math.min(1,t))),0];
-  // 跳ねる敵: コマ0で着地（音）、コマ2で一番高い
-  case 'slime.bounce':case 'mushling.bounce':case 'beetle.bounce':return [0,-Math.round(8*Math.sin(Math.PI*t/4))];
-  case 'wisp.bounce':return [Math.round(2*Math.sin(Math.PI*t/2)),-Math.round(3*Math.sin(Math.PI*t/4))];
-  // 斬撃が当たると、後ろへはじかれて戻る
-  default:
-   if(action==='hit')return [Math.round(7*(1-t/2)),-Math.round(3*Math.sin(Math.PI*t/2))];
-   // 蛍は 8拍で横に、4拍で縦にゆっくり漂う
-   if(sprite==='firefly')return [Math.round(10*Math.sin(Math.PI*beats/4)),Math.round(5*Math.sin(Math.PI*beats/2))];
-   return [0,0];
- }
-}
+
+// 舞台。何をどこに描くかは sceneAt（web/scene.mjs）が決め、ここはそのリストを Canvas に描くだけ。
+// 変化があった時だけ描き直す。景色が変わる時（空と地面）と曲が切り替わる時（画面全体）は、前の絵から滑らかにつなぐ。
 const stage={
- track:null,ctx:null,moved:null,gearItems:[],segment:-1,last:'',dirty:true,theme:'',fade:null,
- init(){const c=$('stage');this.ctx=c.getContext('2d');this.ctx.imageSmoothingEnabled=false;},
- prepare(track){
+ ctx:null,track:null,gear:[],last:'',dirty:true,segment:-1,theme:'',themeFade:null,swap:null,
+ init(){const c=$('stage');this.ctx=c.getContext('2d');this.ctx.imageSmoothingEnabled=false;this.snap=document.createElement('canvas');this.snap.width=c.width;this.snap.height=c.height;},
+ setGear(g){const items=[g.equipment?.weapon,g.equipment?.armor].filter(id=>id&&EQUIP_LAYERS[id]).flatMap(id=>EQUIP_LAYERS[id].map(layer=>id+':'+layer));if(items.join()!==this.gear.join()){this.gear=items;this.dirty=true;}},
+ // 曲が切り替わったら、今の画面を写しておき 0.5 秒かけて新しい画面へ溶かす。
+ setTrack(track){
+  if(track===this.track)return;
+  if(this.track){this.snap.getContext('2d').clearRect(0,0,256,144);this.snap.getContext('2d').drawImage($('stage'),0,0);this.swap={start:performance.now()};}
   this.track=track;this.segment=-1;this.dirty=true;
-  this.moved=[0];for(let s=0;s<track.steps;s++)this.moved.push(this.moved[s]+(track.moving[s]?1:0));
  },
- gear(g){const items=[g.equipment?.weapon,g.equipment?.armor].filter(id=>id&&EQUIP_LAYERS[id]);if(items.join()!==this.gearItems.join()){this.gearItems=items;this.dirty=true;}},
- enterSegment(index){
-  const seg=this.track.segments[index];this.segment=index;
-  // 景色が変わる時は、空と地面を 1.2 秒かけてクロスフェードする。
-  if(seg.theme!==this.theme){if(this.theme)this.fade={from:this.theme,start:performance.now()};this.theme=seg.theme;}
+ enterSegment(scene){
+  const seg=scene.seg;this.segment=scene.index;
+  if(seg.theme!==this.theme){if(this.theme)this.themeFade={from:this.theme,start:performance.now()};this.theme=seg.theme;}
   $('themeName').textContent=THEME_NAMES[seg.theme]||'';
   $('sceneText').textContent=sceneText(seg);
   player.metadata(seg);
  },
- put(key,x,y){const c=sprites.get(key);if(c)this.ctx.drawImage(c,Math.round(x)-VIEW_LEFT,Math.round(y)-36);},
- tiles(theme,layer,offset,alpha){
-  const c=sprites.bg.get(theme+'-'+layer);if(!c)return;
-  const x=-Math.round(offset%320)-VIEW_LEFT;this.ctx.globalAlpha=alpha;
+ tiles(item,theme,alpha){
+  const c=sprites.bg.get(theme+'-'+item.layer);if(!c||alpha<=0)return;
+  const x=-Math.round(item.offset%320)-VIEW_LEFT;this.ctx.globalAlpha=alpha;
   this.ctx.drawImage(c,x,-36);this.ctx.drawImage(c,x+320,-36);this.ctx.globalAlpha=1;
- },
- lane(name,moved,step,only=()=>true){
-  for(const o of this.track.objects){
-   if(o.lane!==name||!only(o))continue;
-   const sx=((o.x-moved*o.pxPerStep)%o.period+o.period)%o.period;
-   for(const x of [sx,sx-o.period])if(x+o.width>VIEW_LEFT&&x<VIEW_RIGHT)this.put(`obj:${o.id}-${o.frames[step]}`,x,o.baseline-o.height);
-  }
  },
  draw(seconds){
   const t=this.track;if(!t)return;
-  const {step,fraction}=stepAt(t,seconds),index=Math.floor(step/SEGMENT_STEPS),seg=t.segments[index],local=step-seg.start;
-  if(index!==this.segment)this.enterSegment(index);
-  const moved=t.scrollBase+this.moved[step]+(t.moving[step]?fraction:0);
-  // 敵は階の頭の4コマで右から滑り込む（楽譜側でもその間は鳴らさない）。
-  const count=seg.mood==='battle'?seg.foes:1,foes=[0,1,2].map(k=>{const entry=t.actors['foe'+k]?.[step];if(!entry)return null;const lead=4+k*2,entering=!/^(spark|fire)/.test(entry)&&local<lead;return {entry,x:seg.mood==='rest'?112:FOE_X[count][k]+(entering?Math.round(110*(1-(local+fraction)/lead)**2):0)};}).filter(Boolean);
-  const fadeAlpha=this.fade?Math.min(1,(performance.now()-this.fade.start)/1200):1;
-  const beats=(step+fraction)/2,move=id=>motion(t.actors[id]?.[step],fraction,beats);
-  const heroMove=move('hero'),catMove=move('cat'),flyMove=move('firefly');
-  for(const f of foes)f.move=motion(f.entry,fraction,beats);
-  // 守り人の足踏み（コマ0）で、画面がほんの一瞬揺れる
-  const stomp=/^guardian-idle-0/.test(foes[0]?.entry??'')&&fraction<.35?(Math.round(fraction*20)%2?1:-1):0;
-  const sig=[step,Math.round(moved*2),Math.round(moved*4),Math.round(moved*8),foes.map(f=>f.x+':'+f.move).join(','),heroMove,catMove,flyMove,stomp,fadeAlpha.toFixed(2),this.theme,this.gearItems.join()].join('|');
+  const scene=sceneAt(t,seconds,this.gear);
+  if(scene.index!==this.segment)this.enterSegment(scene);
+  const now=performance.now(),themeA=this.themeFade?Math.min(1,(now-this.themeFade.start)/1200):1,swapA=this.swap?Math.min(1,(now-this.swap.start)/500):1;
+  const sig=scene.items.map(i=>i.kind==='bg'?i.layer+Math.round(i.offset):i.key+i.x+','+i.y).join('|')+'|'+scene.shake+'|'+themeA.toFixed(2)+'|'+swapA.toFixed(2);
   if(sig===this.last&&!this.dirty)return;
   this.last=sig;this.dirty=false;
-  const ctx=this.ctx;ctx.setTransform(1,0,0,1,0,stomp);ctx.clearRect(0,-2,256,148);
-  // 遠景 → 中景 → 地面 → キャラ → 手前の物 の順に重ねる。
-  if(this.fade&&fadeAlpha<1)this.tiles(this.fade.from,'far',moved*2,1);
-  this.tiles(this.theme,'far',moved*2,fadeAlpha);
-  this.lane('far',moved,step);this.lane('mid',moved,step);
-  if(this.fade&&fadeAlpha<1)this.tiles(this.fade.from,'near',moved*8,1);
-  this.tiles(this.theme,'near',moved*8,fadeAlpha);
-  if(fadeAlpha>=1)this.fade=null;
-  // 手前の物はキャラの後ろ。門だけはキャラの前に描いて、くぐって見せる。
-  this.lane('near',moved,step,o=>o.id!=='arch');
-  for(const id of ['owl','frog'])this.put(t.actors[id][step],...SPOTS[id]);
-  this.put(t.actors.firefly[step],SPOTS.firefly[0]+flyMove[0],SPOTS.firefly[1]+flyMove[1]);
-  if(t.actors.cat)this.put(t.actors.cat[step],SPOTS.cat[0]+catMove[0],SPOTS.cat[1]+catMove[1]);
-  const pose=t.actors.hero[step].slice(5),hx=SPOTS.hero[0]+heroMove[0],hy=SPOTS.hero[1]+heroMove[1];
-  for(const item of this.gearItems)this.put(`eq:${item}-back-${pose}`,hx,hy);
-  this.put(t.actors.hero[step],hx,hy);
-  for(const item of this.gearItems)this.put(`eq:${item}-front-${pose}`,hx,hy);
-  for(const f of [...foes].reverse())this.put(f.entry,f.x+f.move[0],SPOTS.foe[1]+f.move[1]);
-  this.lane('near',moved,step,o=>o.id==='arch');
-  this.put(t.actors.leaves[step],...SPOTS.leaves);
+  const ctx=this.ctx;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,256,144);ctx.setTransform(1,0,0,1,0,scene.shake);
+  for(const item of scene.items){
+   if(item.kind==='bg'){if(this.themeFade&&themeA<1)this.tiles(item,this.themeFade.from,1);this.tiles(item,this.theme,themeA);continue;}
+   const c=sprites.get(item.key);if(c)ctx.drawImage(c,item.x-VIEW_LEFT,item.y-36);
+  }
+  ctx.setTransform(1,0,0,1,0,0);
+  if(themeA>=1)this.themeFade=null;
+  if(this.swap){ctx.globalAlpha=1-swapA;ctx.drawImage(this.snap,0,0);ctx.globalAlpha=1;if(swapA>=1)this.swap=null;}
  }
 };
 
@@ -216,8 +174,8 @@ function loop(){
  requestAnimationFrame(loop);
  if(document.hidden)return;
  const t=player.visual();if(!t)return;
- if(stage.track!==t)stage.prepare(t);
- stage.draw(player.clock());
+ stage.setTrack(t);
+ stage.draw(smooth.now(player.clock(),t.duration));
 }
 
 function showError(text){$('error').textContent=text;$('error').hidden=false;}
@@ -230,7 +188,7 @@ function render(){
  $('rest').textContent=g.running?'休む':'冒険を再開';
  $('rest').disabled=busy;
  $('logs').replaceChildren(...g.logs.slice(0,4).map(l=>{const li=document.createElement('li'),time=document.createElement('time'),text=document.createElement('span');time.textContent=new Date(l.at).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tokyo'});text.textContent=l.text;li.append(time,text);return li;}));
- stage.gear(g);
+ stage.setGear(g);
  player.want(g);
 }
 function saved(state,text){$('saveStatus').dataset.state=state;$('saveStatus').textContent=text;}
