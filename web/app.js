@@ -132,9 +132,9 @@ const stage={
   const x=-Math.round(offset%320)-VIEW_LEFT;this.ctx.globalAlpha=alpha;
   this.ctx.drawImage(c,x,-36);this.ctx.drawImage(c,x+320,-36);this.ctx.globalAlpha=1;
  },
- lane(name,moved,step){
+ lane(name,moved,step,only=()=>true){
   for(const o of this.track.objects){
-   if(o.lane!==name)continue;
+   if(o.lane!==name||!only(o))continue;
    const sx=((o.x-moved*o.pxPerStep)%o.period+o.period)%o.period;
    for(const x of [sx,sx-o.period])if(x+o.width>VIEW_LEFT&&x<VIEW_RIGHT)this.put(`obj:${o.id}-${o.frames[step]}`,x,o.baseline-o.height);
   }
@@ -160,13 +160,15 @@ const stage={
   if(this.fade&&fadeAlpha<1)this.tiles(this.fade.from,'near',moved*8,1);
   this.tiles(this.theme,'near',moved*8,fadeAlpha);
   if(fadeAlpha>=1)this.fade=null;
+  // 手前の物はキャラの後ろ。門だけはキャラの前に描いて、くぐって見せる。
+  this.lane('near',moved,step,o=>o.id!=='arch');
   for(const id of ['owl','firefly','frog','cat'])if(t.actors[id])this.put(t.actors[id][step],...SPOTS[id]);
   const pose=t.actors.hero[step].slice(5);
   for(const item of this.gearItems)this.put(`eq:${item}-back-${pose}`,...SPOTS.hero);
   this.put(t.actors.hero[step],...SPOTS.hero);
   for(const item of this.gearItems)this.put(`eq:${item}-front-${pose}`,...SPOTS.hero);
   this.put(foe,foeX,SPOTS.foe[1]);
-  this.lane('near',moved,step);
+  this.lane('near',moved,step,o=>o.id==='arch');
   this.put(t.actors.leaves[step],...SPOTS.leaves);
  },
  rail(t,index,progress){
