@@ -2,10 +2,11 @@
 // DOM に触らない純粋な関数なので、Node のテストで表示の不具合を確かめられる。画面側（app.js）はこのリストを描くだけ。
 // 座標は世界（320×180）の座標。画面に映るのは VIEW_LEFT〜VIEW_RIGHT（256×144）。
 // build.mjs は楽譜エンジンの後ろにこのファイルをつなげる（その時、下の import 行は取り除く）。
-import {stepAt,SEGMENT_STEPS,VIEW_LEFT,VIEW_RIGHT} from './score.mjs';
+import {stepAt,segmentIndex,VIEW_LEFT,VIEW_RIGHT} from './score.mjs';
 
 // 役者の立ち位置（左上）。モンスターは数に応じて並べ、奥の敵ほど遅れて滑り込む。
-export const SPOTS={owl:[240,62],firefly:[148,64],frog:[256,142],cat:[38,140],hero:[72,138],foe:[196,138],fire:[112,138],leaves:[264,150]};
+// 隊列は右から ゆっぴ → ミオ → トム → コロ。ルミはゆっぴの後ろの空を飛ぶ。
+export const SPOTS={owl:[240,62],firefly:[148,64],frog:[256,142],koro:[34,140],cat:[54,140],mio:[78,138],lumi:[84,98],hero:[104,138],foe:[196,138],fire:[140,138],leaves:[264,150],god:[128,36]};
 export const FOE_X={1:[196],2:[178,212],3:[160,190,220]};
 export const SPRITE_SIZE=32;
 
@@ -59,7 +60,7 @@ export function walkTable(track){
 //  {kind:'bg', layer:'far'|'near', theme, offset}  空・地面のタイル（offset だけ左へずらして横に並べる）
 //  {kind:'sprite', key, x, y}                       ドット絵（key は ART のグリッド名）
 export function sceneAt(track,seconds,gear=[]){
- const {step,fraction}=stepAt(track,seconds),index=Math.floor(step/SEGMENT_STEPS),seg=track.segments[index],local=step-seg.start;
+ const {step,fraction}=stepAt(track,seconds),index=segmentIndex(track,step),seg=track.segments[index],local=step-seg.start;
  const moved=track.scrollBase+walkTable(track)[step]+(track.moving[step]?fraction:0),beats=(step+fraction)/2;
  const actor=id=>track.actors[id]?.[step]||'',items=[];
  const sprite=(key,x,y)=>items.push({kind:'sprite',key,x:Math.round(x),y:Math.round(y)});
@@ -78,9 +79,21 @@ export function sceneAt(track,seconds,gear=[]){
  lane('near',o=>o.id!=='arch');
  at('owl',SPOTS.owl);at('frog',SPOTS.frog);
  at('firefly',SPOTS.firefly,motion(actor('firefly'),fraction,beats));
+ at('koro',SPOTS.koro);
  at('cat',SPOTS.cat,motion(actor('cat'),fraction,beats));
+ at('mio',SPOTS.mio,motion(actor('mio').replace('mio-','hero-'),fraction,beats));
+ at('lumi',SPOTS.lumi,[0,Math.round(3*Math.sin(Math.PI*beats/2))]);
  // 攻撃中は、武器のヒットに合わせてポーズ（コマ）と踏み込みを決める。
  let heroKey=actor('hero'),[hdx,hdy]=motion(heroKey,fraction,beats);
+ // プロローグ: ゆっぴは光の粒。天の庭では神の光のそばで揺れ、堕ちる場面では空から森へ落ちていく。
+ if(heroKey.startsWith('soul-')){
+  const k=(local+fraction)/seg.steps,x=seg.mood==='fall'?SPOTS.hero[0]+8-Math.round(20*k):150+Math.round(10*Math.sin(Math.PI*beats/2));
+  const y=seg.mood==='fall'?Math.round(40+118*k*k):96+Math.round(4*Math.sin(Math.PI*beats));
+  if(seg.mood==='heaven')sprite(actor('foe0'),...SPOTS.god);
+  sprite(heroKey,x,y);
+  at('leaves',SPOTS.leaves);
+  return {step,fraction,index,seg,theme:seg.theme,shake:0,items};
+ }
  const [,heroAction,heroFrame]=heroKey.split('-');
  if(heroAction==='attack'){const a=attackPose(+heroFrame,fraction,track.hits||[0]);heroKey='hero-attack-'+a.pose;hdx=a.dx;hdy=a.dy;}
  const hx=SPOTS.hero[0]+hdx,hy=SPOTS.hero[1]+hdy,pose=heroKey.slice(5);
@@ -93,7 +106,8 @@ export function sceneAt(track,seconds,gear=[]){
  for(let k=count-1;k>=0;k--){
   const key=actor('foe'+k);if(!key)continue;
   if(seg.mood==='rest'){sprite(key,...SPOTS.fire);continue;}
-  const lead=4+k*2,entering=!/^(spark|fire)/.test(key)&&local<lead,slide=entering?110*(1-(local+fraction)/lead)**2:0;
+  if(seg.mood==='altar'){sprite(key,SPOTS.foe[0]-12,SPOTS.foe[1]+2);continue;}
+  const lead=4+k*2,entering=!/^(spark|fire|signpost|koro|lumi)/.test(key)&&local<lead,slide=entering?110*(1-(local+fraction)/lead)**2:0;
   const [dx,dy]=motion(key,fraction,beats);
   sprite(key,FOE_X[count][k]+slide+dx,SPOTS.foe[1]+dy);
  }

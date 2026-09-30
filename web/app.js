@@ -3,12 +3,13 @@
 /* SCORE_JS */
 /* SCENE_JS */
 const $=id=>document.getElementById(id);
-const THEME_NAMES={entrance:'森の入口',deep:'森の奥',mist:'霧の森',clearing:'守り人の広場'};
+const THEME_NAMES={entrance:'森の入口',deep:'森の奥',mist:'霧の森',clearing:'守り人の広場',heaven:'天の庭'};
+const COMPANION_NAMES={tom:'トム',koro:'コロ',lumi:'ルミ',mio:'ミオ'};
 const MOOD_TEXT={travel:'ゆっぴとトムは、森の奥へ進んでいる。',treasure:'宝箱を見つけた。ふたが鳴っている。',boss:'森の守り人が立ちはだかる。',rest:'焚き火のそばで、ひと休み。'};
 const MONSTER_NAMES={slime:'スライム',mushling:'キノコの子',beetle:'カブトムシ',wisp:'鬼火',guardian:'森の守り人'};
 const CARD_NAME={travel:'道',battle:'戦闘',treasure:'宝箱',boss:'守り人',rest:'休憩'};
-const CARD_MS=cardMs('forest');
-const sceneText=seg=>seg.mood==='battle'?[...new Set(seg.monsters)].map(m=>MONSTER_NAMES[m]).join('と')+(seg.foes>1?'が'+seg.foes+'体':'が')+'現れた。ゆっぴが立ち向かう。':MOOD_TEXT[seg.mood];
+const TURN_MS=turnMs('forest');
+const sceneText=seg=>TRIALS[seg.mood]?TRIALS[seg.mood].text:seg.mood==='heaven'||seg.mood==='fall'?PROLOGUE_LINES[seg.index*4]:seg.mood==='battle'?[...new Set(seg.monsters)].map(m=>MONSTER_NAMES[m]).join('と')+(seg.foes>1?'が'+seg.foes+'体':'が')+'現れた。ゆっぴが立ち向かう。':MOOD_TEXT[seg.mood];
 const WORKER_MAIN='onmessage=e=>{const t=composeTrack(e.data.state,e.data.world);const wav=encodeWav(renderTrack(t));postMessage({key:t.key,wav},[wav.buffer]);};';
 
 let snapshot=null,offset=0,busy=false,loading=false;
@@ -28,7 +29,11 @@ const player={
   a.addEventListener('error',()=>{this.sync();showError('曲を読み込めませんでした。再生ボタンでもう一度お試しください。');});
   if('mediaSession' in navigator)for(const [action,run] of [['play',()=>this.toggle(true)],['pause',()=>this.audio.pause()],['stop',()=>this.audio.pause()]]){try{navigator.mediaSession.setActionHandler(action,run);}catch{}}
  },
- stateFor(g){return {zone:'forest',running:g.running,cycle:g.cycle,card:g.card,weapon:g.equipment?.weapon,armor:g.equipment?.armor,level:1,companion:true};},
+ // 楽譜に渡す状態。攻撃力（戦闘のターン数が変わる）も渡す。
+ stateFor(g){
+  const choices=Object.fromEntries(Object.entries(g.choices||{}).filter(([k])=>k.startsWith(g.cycle+':')).map(([k,v])=>[+k.split(':')[1],v]));
+  return {zone:'forest',running:g.running,cycle:g.cycle,card:g.card,weapon:g.equipment?.weapon,armor:g.equipment?.armor,level:1,companion:true,power:snapshot?.combatPower??1,party:g.party||['tom'],choices,prologue:g.prologue||0};
+ },
  // ゲームの状態に合う曲を用意する（装備・休憩が変わった時だけ作り直す）。
  want(g){
   const state=this.stateFor(g),key=trackKey(state);
@@ -44,20 +49,35 @@ const player={
   for(const [k,url] of this.urls)if(this.urls.size>4&&k!==key&&k!==this.track?.key&&k!==this.nextKey){URL.revokeObjectURL(url);this.urls.delete(k);this.tracks.delete(k);}
   if(key===this.wanted)this.apply(key);
  },
- // 曲を差し替える。冒険中どうしなら同じ位置から続けるので、装備を変えると音色だけがその場で変わる。
+ // 曲を差し替える。冒険中どうし（装備を変えた時など）は、次の小節の頭まで待ってから差し替え、
+ // 新しい曲の同じカード・同じターンから続ける（フレーズの途中で音色が変わらないように）。
  apply(key){
-  const next=this.tracks.get(key),a=this.audio,playing=!a.paused,keep=playing&&this.track&&this.track.running===next.running;
-  const at=keep?a.currentTime:null;
-  this.track=next;a.src=this.urls.get(key);
-  this.pendingSeek=at??this.target();
+  const next=this.tracks.get(key),a=this.audio,playing=!a.paused,keep=playing&&this.track&&this.track.kind===next.kind;
+  if(keep){const {step}=stepAt(this.track,a.currentTime),bar=(Math.floor(step/TURN_STEPS)+1)*TURN_STEPS;this.pendingSwap={key,bar,from:this.track};return;}
+  this.swap(key,this.target());
+ },
+ swap(key,seconds){
+  const a=this.audio,playing=!a.paused;
+  this.pendingSwap=null;this.track=this.tracks.get(key);a.src=this.urls.get(key);
+  this.pendingSeek=seconds;
   if(playing)a.play().catch(()=>this.sync());
   this.sync();
+ },
+ // 毎フレーム: 差し替え待ちの小節の頭に来たら、新しい曲の同じカード・同じターンへ。
+ tick(){
+  const p=this.pendingSwap,a=this.audio;if(!p||a.paused)return;
+  const {step}=stepAt(p.from,a.currentTime),barStart=Math.floor(step/TURN_STEPS)*TURN_STEPS;
+  if(barStart!==p.bar%p.from.steps)return;
+  const seg=p.from.segments[segmentIndex(p.from,barStart)],turn=(barStart-seg.start)/TURN_STEPS;
+  this.swap(p.key,secondsAt(this.tracks.get(p.key),seg.card,turn,0));
  },
  // 冒険の進み具合から、曲のどこを鳴らすべきか。
  target(){
   const t=this.visual();if(!t||!snapshot)return 0;
   if(!t.running)return performance.now()/1000%t.duration;
-  const g=snapshot.game;return secondsForCard(t,g.card,(Date.now()+offset-g.lastAt)/CARD_MS);
+  const g=snapshot.game,fraction=(Date.now()+offset-g.lastAt)/TURN_MS;
+  if(t.kind==='prologue'){const done=PROLOGUE_TURNS-(g.prologue||0);return secondsAt(t,Math.floor(done/4),done%4,fraction);}
+  return secondsAt(t,g.card,g.turn||0,fraction);
  },
  // 描く楽譜: 再生中は鳴っている曲、止まっている間はサーバーの状態に合う曲（できていれば）。
  visual(){return !this.audio.paused&&this.track?this.track:this.tracks.get(this.wanted)??this.track??null;},
@@ -155,6 +175,7 @@ const stage={
   const t=this.track;if(!t)return;
   const scene=sceneAt(t,seconds,this.gear);
   if(scene.index!==this.segment)this.enterSegment(scene);
+  if(t.kind==='prologue'){const line=PROLOGUE_LINES[scene.index*4+Math.min(3,Math.floor((scene.step-scene.seg.start)/TURN_STEPS))];if($('sceneText').textContent!==line)$('sceneText').textContent=line;}
   const now=performance.now(),themeA=this.themeFade?Math.min(1,(now-this.themeFade.start)/1200):1,swapA=this.swap?Math.min(1,(now-this.swap.start)/500):1;
   const sig=scene.items.map(i=>i.kind==='bg'?i.layer+Math.round(i.offset):i.key+i.x+','+i.y).join('|')+'|'+scene.shake+'|'+themeA.toFixed(2)+'|'+swapA.toFixed(2);
   if(sig===this.last&&!this.dirty)return;
@@ -175,6 +196,7 @@ function loop(){
  if(document.hidden)return;
  const t=player.visual();if(!t)return;
  stage.setTrack(t);
+ player.tick();
  stage.draw(smooth.now(player.clock(),t.duration));
 }
 
@@ -183,6 +205,8 @@ function render(){
  if(!snapshot)return;
  const g=snapshot.game,catalog=snapshot.equipmentCatalog;
  wardrobe(g,catalog);
+ choicePanel(g);
+ journey(g);
  $('rest').textContent=g.running?'休む':'冒険を再開';
  $('rest').disabled=busy;
  $('logs').replaceChildren(...g.logs.slice(0,4).map(l=>{const li=document.createElement('li'),time=document.createElement('time'),text=document.createElement('span');time.textContent=new Date(l.at).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tokyo'});text.textContent=l.text;li.append(time,text);return li;}));
@@ -204,6 +228,27 @@ function wardrobe(g,catalog){
   }));
   $(slot+'Trait').textContent=(traits[worn??'none']||traits.none).trait;
  }
+}
+// 試練のカードの間だけ、2つの選択肢を出す。選ばなければ前に進むほう（既定）になる。
+let choiceKey='';
+function choicePanel(g){
+ const card=snapshot.card,trial=TRIALS[card?.kind],open=!!trial&&g.running&&!(g.prologue>0);
+ $('choice').hidden=!open;
+ const picked=open?(g.choices?.[g.cycle+':'+g.card]??null):null,key=JSON.stringify([open,g.cycle,g.card,picked,busy]);
+ if(key===choiceKey)return;choiceKey=key;
+ if(!open)return;
+ $('choiceTitle').textContent=trial.title;
+ $('choiceOptions').replaceChildren(...trial.options.map(o=>{
+  const b=document.createElement('button');b.type='button';b.setAttribute('role','radio');b.textContent=o.label;
+  b.setAttribute('aria-checked',String((picked??trial.default)===o.id));b.disabled=busy;
+  b.onclick=()=>command({type:'choose',option:o.id});
+  return b;
+ }));
+ $('choiceNote').textContent=picked?'選んだ。このカードの終わりに決まる。':'選ばなければ「'+trial.options.find(o=>o.id===trial.default).label+'」になる。';
+}
+function journey(g){
+ const marks=g.marks?.length??0,need=snapshot.marksToPass??3;
+ $('marks').textContent='しるし '+'◆'.repeat(marks)+'◇'.repeat(Math.max(0,need-marks))+'　仲間 '+(g.party||['tom']).map(id=>COMPANION_NAMES[id]||id).join('・')+(g.chapterDone?'　第1章 完':'');
 }
 function saved(state,text){$('saveStatus').dataset.state=state;$('saveStatus').textContent=text;}
 async function load(){

@@ -23,7 +23,13 @@
  </section>
 
  <section class="panel">
-  <p id="sceneText" class="scene-text">ゆっぴは蛍火の森を進んでいる。</p>
+  <p id="sceneText" class="scene-text">はじめに、ひとつの歌があった。</p>
+  <p id="marks" class="marks"></p>
+  <div id="choice" class="choice" hidden>
+   <p class="choice-title" id="choiceTitle">試練</p>
+   <div class="choice-options" id="choiceOptions" role="radiogroup" aria-labelledby="choiceTitle"></div>
+   <p class="choice-note" id="choiceNote"></p>
+  </div>
 
   <div class="controls">
    <button id="play" class="play" type="button" aria-pressed="false" disabled><span class="play-icon" aria-hidden="true"></span><span id="playLabel">曲を準備中</span></button>

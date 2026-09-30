@@ -1,20 +1,24 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {composeTrack,renderTrack,encodeWav,stepAt,secondsForCard,cardMs,deckFor,toChord,layoutArea,SOUND_FRAMES,SEGMENT_STEPS,DECK_SIZE,MUSIC_RATE,HERO_X,WEAPONS,ARMORS} from '../web/score.mjs';
+import {composeTrack,renderTrack,encodeWav,stepAt,secondsAt,turnMs,deckFor,toChord,layoutArea,cardTurns,SOUND_FRAMES,SEGMENT_STEPS,TURN_STEPS,DECK_SIZE,MUSIC_RATE,HERO_X,WEAPONS,ARMORS,TRIALS,MONSTER_HP,MAX_BATTLE_TURNS} from '../web/score.mjs';
+import {STORY_SOUND_FRAMES} from '../scripts/story-art.mjs';
 import {sceneAt} from '../web/scene.mjs';
 import {SOUND_FRAMES as ART_FRAMES} from '../scripts/pixel-art.mjs';
 import {MONSTER_SPRITES} from '../scripts/monsters.mjs';
 import * as world from '../scripts/forest-objects.mjs';
-import {deckFor as serverDeck,STEP_MS,MONSTERS} from '../server/game.mjs';
+import {deckFor as serverDeck,cardTurns as serverTurns,TRIALS as SERVER_TRIALS,MONSTER_HP as SERVER_HP,MAX_BATTLE_TURNS as SERVER_MAX,STEP_MS,MONSTERS} from '../server/game.mjs';
 const run={zone:'forest',running:true,cycle:0,card:0,weapon:'leaf-blade',armor:'moss-cloak',companion:true};
 
 test('score, pixel art and server agree on sounding frames, the shuffled deck and the card length',()=>{
- for(const [key,frames] of Object.entries(ART_FRAMES))assert.deepEqual(SOUND_FRAMES[key],frames,key);
+ for(const [key,frames] of Object.entries({...ART_FRAMES,...STORY_SOUND_FRAMES}))assert.deepEqual(SOUND_FRAMES[key],frames,key);
+ for(const [id,trial] of Object.entries(TRIALS)){assert.equal(trial.default,SERVER_TRIALS[id].default);assert.deepEqual(trial.options.map(o=>o.id),Object.keys(SERVER_TRIALS[id].options));}
+ assert.deepEqual(MONSTER_HP,SERVER_HP);assert.equal(MAX_BATTLE_TURNS,SERVER_MAX);
+ for(let c=0;c<30;c++)for(const card of deckFor(c))for(const p of [1,2,3,5])assert.equal(cardTurns(card,{power:p}),serverTurns(card,p));
  for(const id of MONSTERS)if(id!=='slime'){assert.ok(SOUND_FRAMES[id+'.bounce'],id);assert.equal(MONSTER_SPRITES[id].bounce.length,4);assert.equal(MONSTER_SPRITES[id].hit.length,2);}
  for(let cycle=0;cycle<200;cycle++)assert.deepEqual(deckFor(cycle),serverDeck(cycle));
- assert.equal(cardMs('forest'),STEP_MS);
- const t=composeTrack(run,world);
- assert.equal(t.segments.length,DECK_SIZE);assert.equal(t.steps,DECK_SIZE*SEGMENT_STEPS);
- assert.ok(Math.abs(t.duration*1000-DECK_SIZE*STEP_MS)<5,'one card of music lasts one server step');
+ assert.equal(turnMs('forest'),STEP_MS);
+ const t=composeTrack(run,world),turns=t.segments.reduce((a,s)=>a+s.turns,0);
+ assert.equal(t.segments.length,DECK_SIZE);assert.equal(t.steps,turns*TURN_STEPS);
+ assert.ok(Math.abs(t.duration*1000-turns*STEP_MS)<5,'one turn of music lasts one server step');
  assert.deepEqual(t.segments.map(s=>s.mood),deckFor(0).map(c=>c.kind));
 });
 
@@ -23,7 +27,7 @@ test('every deck is shuffled differently but always starts on the road and ends 
  for(let cycle=0;cycle<60;cycle++){
   const deck=deckFor(cycle),kinds=deck.map(c=>c.kind);seen.add(kinds.join());
   assert.equal(deck.length,DECK_SIZE);assert.equal(kinds[0],'travel');assert.equal(kinds.at(-1),'boss');
-  assert.equal(kinds.filter(k=>k==='travel').length,5);assert.equal(kinds.filter(k=>k==='battle').length,4);assert.equal(kinds.filter(k=>k==='treasure').length,2);
+  assert.equal(kinds.filter(k=>k==='travel').length,5);assert.equal(kinds.filter(k=>k==='battle').length,3);assert.equal(kinds.filter(k=>k==='treasure').length,2);assert.equal(kinds.filter(k=>TRIALS[k]).length,1);
   for(const c of deck.filter(c=>c.kind==='battle')){assert.ok(c.foes>=1&&c.foes<=3);assert.equal(c.monsters.length,c.foes);}
  }
  assert.ok(seen.size>50,'decks differ from cycle to cycle');
@@ -43,7 +47,7 @@ test('battles bring one to three monsters that bounce on different beats and tak
  const beats=k=>{const f=t.actors['foe'+k],out=new Set();for(let s=seg.start+8;s<seg.start+24;s++){const [sprite,action,frame]=f[s].split('-');if(action==='bounce'&&SOUND_FRAMES[sprite+'.bounce']?.includes(+frame)&&f[s]!==f[s-1])out.add(s%4);}return [...out].sort().join();};
  assert.notEqual(beats(0),beats(1),'second monster answers on another beat');
  for(const k of [0,1,2]){
-  const f=t.actors['foe'+k].slice(seg.start,seg.start+SEGMENT_STEPS);
+  const f=t.actors['foe'+k].slice(seg.start,seg.start+seg.steps);
   assert.ok(f.every(Boolean),'monster '+k+' is on stage for the whole card');
   assert.ok(f.some(e=>e.includes('hit-0')),'monster '+k+' gets hit');
   f.forEach((e,i)=>{if(e.includes('hit-1'))assert.ok(f[i-1].includes('hit-0'));});
@@ -58,10 +62,10 @@ test('fills, breaks and swing keep the loop from sounding the same every card',(
  assert.equal(tail(roads[0]),'hero-walk-0 hero-walk-1 hero-walk-2 hero-walk-3');
  assert.equal(tail(roads[1]),'hero-walk-0 hero-walk-2 hero-walk-0 hero-walk-2','ラン: quick steps');
  assert.equal(tail(roads[2]),'hero-walk-3 hero-walk-3 hero-walk-0 hero-walk-2','ため: hold, then catch up with two steps');
- assert.ok(t.moving.slice(roads[3].start,roads[3].start+SEGMENT_STEPS).some(m=>!m),'4th road card stops for a break bar');
+ assert.ok(t.moving.slice(roads[3].start,roads[3].start+roads[3].steps).some(m=>!m),'4th road card stops for a break bar');
  assert.ok(t.stepTimes[roads[0].start+1]-t.stepTimes[roads[0].start]<t.stepTimes[roads[2].start+1]-t.stepTimes[roads[2].start],'3rd road card swings the off-beat later');
  assert.equal(stepAt(t,t.stepTimes[70]+.001).step,70);
- const beat=60/t.bpm;assert.ok(Math.abs(secondsForCard(t,3,.5)-3.5*16*beat)<1e-9);
+ const beat=60/t.bpm,seg=t.segments[3];assert.ok(Math.abs(secondsAt(t,3,1,.5)-(seg.start+12)/2*beat)<.05);
 });
 
 test('each deck is one long scroll: scenery never pops between cards, and gates pass Yuppi between road cards',()=>{

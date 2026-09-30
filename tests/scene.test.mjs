@@ -4,18 +4,19 @@ import {sceneAt,SPOTS,FOE_X,SPRITE_SIZE} from '../web/scene.mjs';
 import * as world from '../scripts/forest-objects.mjs';
 import {CREATURE_SPRITES} from '../scripts/creature-motion.mjs';
 import {MONSTER_SPRITES} from '../scripts/monsters.mjs';
+import {STORY_SPRITES} from '../scripts/story-art.mjs';
 import {EQUIPMENT_LAYERS} from '../scripts/pixel-art.mjs';
 
 // build.mjs と同じ規則で、描けるドット絵の名前をそろえる
 const keys=new Set();
-for(const [sprite,actions] of Object.entries({...CREATURE_SPRITES,...MONSTER_SPRITES}))for(const [action,frames] of Object.entries(actions))frames.forEach((_,f)=>keys.add(`${sprite}-${action}-${f}`));
+for(const [sprite,actions] of Object.entries({...CREATURE_SPRITES,...MONSTER_SPRITES,...STORY_SPRITES}))for(const [action,frames] of Object.entries(actions))frames.forEach((_,f)=>keys.add(`${sprite}-${action}-${f}`));
 for(const [item,layers] of Object.entries(EQUIPMENT_LAYERS))for(const [layer,actions] of Object.entries(layers))for(const [action,frames] of Object.entries(actions))frames.forEach((_,f)=>keys.add(`eq:${item}-${layer}-${action}-${f}`));
 for(const [id,o] of Object.entries(world.OBJECTS))o.frames.forEach((_,f)=>keys.add(`obj:${id}-${f}`));
 const gear=Object.entries(EQUIPMENT_LAYERS).flatMap(([id,layers])=>Object.keys(layers).map(layer=>id+':'+layer));
 const scenes=function*(track,every=1){for(let s=0;s<track.steps;s+=every)for(const fr of [0,.5])yield sceneAt(track,track.stepTimes[s]+(track.stepTimes[s+1]-track.stepTimes[s])*fr,gear);};
 
 test('every drawn sprite exists and sits inside the stage',()=>{
- for(const state of [{running:true,cycle:0},{running:true,cycle:3},{running:false,cycle:2,card:5}]){
+ for(const state of [{running:true,cycle:0},{running:true,cycle:3,party:['tom','koro','lumi','mio']},{running:false,cycle:2,card:5,party:['tom','koro']},{running:true,cycle:0,prologue:8}]){
   const t=composeTrack({zone:'forest',companion:true,weapon:'leaf-blade',armor:'moss-cloak',...state},world);
   for(const scene of scenes(t)){
    assert.equal(scene.items.filter(i=>i.kind==='bg').length,2,'sky and ground');
@@ -67,7 +68,7 @@ test('the same moment always draws the same picture, and gear is layered around 
 test('monsters slide in from the right, then stand at their places on the beat',()=>{
  let cycle=0;const withFoes=()=>composeTrack({zone:'forest',running:true,cycle,companion:true},world);
  let t=withFoes();while(!t.segments.some(s=>s.foes===3)){cycle++;t=withFoes();}
- const seg=t.segments.find(s=>s.foes===3),at=step=>sceneAt(t,t.stepTimes[step],gear).items.filter(i=>/^(slime|mushling|beetle|wisp)-/.test(i.key));
+ const seg=t.segments.find(s=>s.foes===3),at=step=>sceneAt(t,t.stepTimes[step]+.001,gear).items.filter(i=>/^(slime|mushling|beetle|wisp)-/.test(i.key));
  const start=at(seg.start),settled=at(seg.start+12);
  assert.equal(settled.length,3);
  assert.ok(Math.max(...start.map(i=>i.x))>Math.max(...settled.map(i=>i.x)),'enter from the right');

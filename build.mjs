@@ -3,7 +3,8 @@ import {appIcon} from './scripts/app-icon.mjs';
 import {PALETTE,EQUIPMENT_LAYERS} from './scripts/pixel-art.mjs';
 import {CREATURE_SPRITES} from './scripts/creature-motion.mjs';
 import {MONSTER_SPRITES} from './scripts/monsters.mjs';
-const SPRITES={...CREATURE_SPRITES,...MONSTER_SPRITES};
+import {STORY_SPRITES,heavenScene} from './scripts/story-art.mjs';
+const SPRITES={...CREATURE_SPRITES,...MONSTER_SPRITES,...STORY_SPRITES};
 import {LANES,THEMES,OBJECTS} from './scripts/forest-objects.mjs';
 import {forestScene} from './scripts/forest-scene.mjs';
 
@@ -24,6 +25,8 @@ for(const [id,o] of Object.entries(OBJECTS))o.frames.forEach((rows,f)=>grids[`ob
 // 景色ごとの空（far）と地面（near）は、それぞれ1枚の SVG にして渡す。
 const bg={};
 for(const {id} of THEMES){const svg=forestScene(id);for(const layer of ['far','near']){const body=svg.match(new RegExp(`<g id="forest-${layer}">([\\s\\S]*?)</g>`))[1];bg[`${id}-${layer}`]=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" width="320" height="180" shape-rendering="crispEdges">${body}</svg>`;}}
+// プロローグの天の庭
+{const heaven=heavenScene();for(const layer of ['far','near'])bg['heaven-'+layer]=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" width="320" height="180" shape-rendering="crispEdges">${heaven[layer]}</svg>`;}
 const art={palette:PALETTE,grids,bg};
 
 const css=await readFile('web/app.css','utf8');
