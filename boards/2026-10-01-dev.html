@@ -1,0 +1,706 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>SpaceBGM2開発タスクボード</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@700;900&family=M+PLUS+1:wght@400;500;700&family=M+PLUS+1+Code:wght@400;500&display=swap">
+
+<!--
+  ============================================================
+  タスクボード テンプレート（SpaceFamilyCompany）
+  ------------------------------------------------------------
+  読みながら次にやることが分かるように、区切りごとにチェック付きの
+  タスクを置く進捗ボード。下の<script id="board">のJSONだけを書き換える。
+  HTML・CSS・JSは触らない。
+  <title>も「<ボード名>タスクボード」の形に書き換える。
+
+  文中で使える書式：**太字**、`コード`、[リンク文字](https://…)（https のみ。新しいタブで開く）
+
+  blocksのtype：
+    text  … { "type":"text", "title":"…", "body":["段落", "段落"] }
+    list  … { "type":"list", "title":"…", "items":["項目", "項目"] }（済んだ作業の一覧、チェックマーク付き）
+    table … { "type":"table", "title":"…", "head":["列","列"], "rows":[["値","値"]] }
+    issue … { "type":"issue", "title":"…", "headline":"…", "body":"…" }（課題・注意）
+    task  … { "type":"task", "id":"一意なID", "tag":"分類・番号（例：次のタスク・02）", "title":"タスク内容" }
+            ← 区切りごとにこれを挟む。下の追従バーが未完了のtaskを順に拾って「次にやること」に出す
+
+  board.key … このボードのlocalStorageキーに使う短い英数字（例："houjinka"）。
+              ボードごとに変える（同じキーだと他のボードとチェック状態が混ざる）
+  done      … 最初からチェック済みにしておくtaskのidの配列（例：["t1"]）
+
+  クロコ … claude.aiのArtifactで capabilities: {db: {}, user: {}, comments: {}} を付けて公開すると、下のバーに
+            「クロコ」が出る。各タスクの「承認」「却下」（どちらも押さなければ保留）と「再確認」（そのタスクの個別チャット）、
+            タスクを途中に挟む機能もここから使う。全部共有DB（kuroko）に残り、クロコ（Claude Code）が読む。
+            フッターの「承認・却下をクロコに送る」と、チャットの送信は、コメントとしてクロコの会話にも通知される。書き足し不要
+  ============================================================
+-->
+<script type="application/json" id="board">
+{
+  "board": {
+    "eyebrow": "SpaceFamilyCompany ／ SpaceBGM2開発",
+    "title": "SpaceBGM2｜音の冒険",
+    "lede": "冒険が鳴らす、24時間かけっぱなしの音楽アプリ（aka BGMコンシェルジュ）の開発ボード。区切りごとにタスクを置いた。チェックすると下のバーが次の1件に切り替わる。",
+    "key": "spacebgm2dev",
+    "repo": "SpaceFamilyCompany/SpaceBGM2-adventure"
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "title": "大前提",
+      "body": [
+        "**世界のすべてが同じリズムで動く。**足音・攻撃・森の生き物・背景の物の1コマ1コマが音符で、1コマ＝8分音符。絵と音は同じ楽譜（`web/score.mjs`）から作るので、ずれない。",
+        "MVPはステージ1（蛍火の森）だけ。森にいる間はイベントカードの山札（12枚）が裏でシャッフルされ、1枚＝16拍。曲の再生位置がそのまま冒険の進み具合になる。"
+      ]
+    },
+    {
+      "type": "table",
+      "title": "使うURL",
+      "head": [
+        "タスク",
+        "開く場所",
+        "リンク"
+      ],
+      "rows": [
+        [
+          "02・03",
+          "本番（iPhoneで開く）",
+          "[spefami.com/bgm/](https://spefami.com/bgm/)"
+        ],
+        [
+          "全体",
+          "ソース",
+          "[GitHub：SpaceBGM2-adventure](https://github.com/SpaceFamilyCompany/SpaceBGM2-adventure)"
+        ],
+        [
+          "04・05",
+          "Codexの利用状況",
+          "[Codexの使用量](https://chatgpt.com/codex/settings/usage)"
+        ]
+      ]
+    },
+    {
+      "type": "task",
+      "id": "t1",
+      "tag": "決定済み・01",
+      "title": "MVPをspefami.com/bgm/に公開（Cloudflare Workers＋Durable Object）"
+    },
+    {
+      "type": "list",
+      "title": "ここまでにやったこと",
+      "items": [
+        "楽譜エンジン：キャラ・森の生き物・背景の物のコマと音を1つの楽譜から作る。フィル（ラン・ため）、スウィング、ブレイク入り",
+        "音の調和：すべての音程を小節の和音の構成音にそろえ、和音が変わる時に前の音を残さない",
+        "音は端末内で合成したWAVを1つのHTML Audioで再生（音声ファイルは配信しない。Workerはgzipで約43KB）",
+        "ドット絵・着せ替えパーツ・背景オブジェクト（Codex制作）、スペファミカラー、UIを0から作り直し",
+        "舞台をCanvasにして60fps。動きのカーブ（歩きの揺れ・踏み込み・跳ねる高さ・ノックバック）を拍から毎フレーム計算",
+        "イベントカードの山札（道5・戦闘4・宝箱2・守り人1）。カードは画面には出さない",
+        "複数戦闘（1〜3体）。スライムと、仮のキノコの子・カブトムシ・鬼火（Claude作）が違う拍・違う音で掛け合う",
+        "フクロウ・カエル・蛍の待機の動き（音の出ないコマで拍に乗る）"
+      ]
+    },
+    {
+      "type": "task",
+      "id": "t2",
+      "tag": "次のタスク・02",
+      "title": "[iPhoneで](https://spefami.com/bgm/)再生してロックし、鳴り続けるか確認する（所長）"
+    },
+    {
+      "type": "task",
+      "id": "t3",
+      "tag": "次のタスク・03",
+      "title": "不協和音が消えたか、戦闘の掛け合いが気持ちいいかを耳で確認する（所長）"
+    },
+    {
+      "type": "issue",
+      "title": "Codexの利用上限",
+      "headline": "Codexは午前7:32まで使えない。",
+      "body": "それまでは仮のモンスター（Claude作）で埋めてある。解除後にCodexへ本番のドット絵を頼む。"
+    },
+    {
+      "type": "task",
+      "id": "t4",
+      "tag": "次のタスク・04",
+      "title": "Codex：本番のモンスター（キノコの子・カブトムシ・鬼火＋新種）のドット絵。跳ねる・ひるむ・鳴るコマ付き"
+    },
+    {
+      "type": "task",
+      "id": "t5",
+      "tag": "次のタスク・05",
+      "title": "Codex：主要な動作（歩く・攻撃・跳ねる）を8コマ（16分音符ごと）に増やす"
+    },
+    {
+      "type": "table",
+      "title": "わかっている課題",
+      "head": [
+        "課題",
+        "直し方の案"
+      ],
+      "rows": [
+        [
+          "束の頭（森の入口）で、前の束の霧の森の物が画面に残る",
+          "束の境目の景色をつなぐか、入口に向けて物を入れ替える"
+        ],
+        [
+          "画面を閉じている間は、今の束の曲がくり返す",
+          "曲の終わりで次の束へ切り替える方式を実機で試す"
+        ],
+        [
+          "次の束の楽譜を組み立てる一瞬、画面が止まることがある",
+          "楽譜の組み立てもWeb Workerへ移す"
+        ],
+        [
+          "セーブは1つを全員で共有（アクセス制限なし）",
+          "一般公開する前に、人ごとの保存に分ける"
+        ]
+      ]
+    },
+    {
+      "type": "task",
+      "id": "t6",
+      "tag": "次のタスク・06",
+      "title": "上の課題（景色のつなぎ・閉じている間の切り替え・楽譜の組み立て）を直す"
+    },
+    {
+      "type": "task",
+      "id": "t7",
+      "tag": "次のタスク・07",
+      "title": "装備の着せ替え画面（持っている装備を選ぶと、見た目と音色が変わる）"
+    },
+    {
+      "type": "task",
+      "id": "t8",
+      "tag": "次のタスク・08",
+      "title": "エリアを配布できる楽譜ファイルにする（山札の中身・出る敵・景色の順番・BPMと和音）"
+    },
+    {
+      "type": "task",
+      "id": "t9",
+      "tag": "判断待ち・09",
+      "title": "[spefami.com](https://spefami.com/)のトップから/bgm/へのリンクを置くか決める（所長）"
+    },
+    {
+      "type": "text",
+      "title": "ここまで",
+      "body": [
+        "全タスクが終わったら、会社の報告書テンプレート（`gadget-report`）で`reports/`にまとめる。"
+      ]
+    }
+  ],
+  "done": [
+    "t1"
+  ]
+}
+</script>
+
+<style>
+:root{
+  --ink:#232046; --ink-deep:#1C1A33; --text:#3D3A57; --muted:#5A5775; --faint:#7C7998;
+  --paper:#F7F5FB; --surface:#FFFFFF; --lilac:#EAE6F5;
+  --line:#D9D5E8; --line-strong:#C9C4E0;
+  --cyan:#A9DDE2; --pink:#F0A9B9; --link:#4A3F8F;
+  --ok:#2E6B4F; --ok-soft:#E1EFE7;
+  --warn:#86570F; --warn-soft:#F5EAD2;
+  --wait:#5A5775; --wait-soft:#ECEAF3;
+  --serif:'Noto Serif JP','Hiragino Mincho ProN','Yu Mincho',serif;
+  --sans:'M PLUS 1','Hiragino Sans','Yu Gothic UI','Meiryo',sans-serif;
+  --mono:'M PLUS 1 Code',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ink:#ECEAF8; --ink-deep:#F4F2FB; --text:#D6D2EC; --muted:#A9A5C8; --faint:#8A86AB;
+    --paper:#16142A; --surface:#1F1C38; --lilac:#29254A;
+    --line:#34305A; --line-strong:#4A4577; --link:#C9C2F2;
+    --ok:#86CFA8; --ok-soft:#17291F;
+    --warn:#E3B75E; --warn-soft:#2D2413;
+    --wait:#A9A5C8; --wait-soft:#25223F;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#ECEAF8; --ink-deep:#F4F2FB; --text:#D6D2EC; --muted:#A9A5C8; --faint:#8A86AB;
+  --paper:#16142A; --surface:#1F1C38; --lilac:#29254A;
+  --line:#34305A; --line-strong:#4A4577; --link:#C9C2F2;
+  --ok:#86CFA8; --ok-soft:#17291F;
+  --warn:#E3B75E; --warn-soft:#2D2413;
+  --wait:#A9A5C8; --wait-soft:#25223F;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.75;-webkit-font-smoothing:antialiased;padding-inline:16px}
+.wrap{max-width:38rem;margin:0 auto;padding-block:28px calc(120px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:30px}
+p{margin:0}
+b{color:var(--ink-deep);font-weight:700}
+a{color:var(--link);text-underline-offset:.2em}a:hover{text-decoration-thickness:2px}
+code{font-family:var(--mono);font-size:.84em;background:var(--lilac);color:var(--ink-deep);padding:.08em .38em;border-radius:4px;word-break:break-all}
+:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
+
+.sample{align-self:flex-start;font-size:12px;color:var(--muted);background:var(--lilac);border:1px dashed var(--line-strong);border-radius:999px;padding:3px 12px}
+
+header{display:flex;flex-direction:column;gap:8px;padding-bottom:18px;border-bottom:1px solid var(--line-strong)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--muted)}
+h1{margin:0;font-family:var(--serif);font-weight:900;font-size:clamp(24px,6vw,30px);color:var(--ink);text-wrap:balance}
+.lede{font-size:13.5px;color:var(--muted);max-width:32em}
+
+section{display:flex;flex-direction:column;gap:10px;scroll-margin-top:20px}
+h2{margin:0;font-family:var(--serif);font-weight:700;font-size:16px;color:var(--ink);padding-bottom:6px;border-bottom:2px solid var(--line-strong)}
+ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.plain li{font-size:14px;display:flex;gap:8px}
+ul.plain li b{flex:none;color:var(--ok)}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+thead th{font-size:11px;font-weight:500;letter-spacing:.06em;color:var(--faint);border-bottom:2px solid var(--line-strong)}
+.issue{border-left:4px solid var(--wait);background:var(--wait-soft);padding:10px 14px;border-radius:0 10px 10px 0;font-size:13.5px}
+.issue b{display:block;color:var(--ink-deep);margin-bottom:2px}
+
+.task{border:2px dashed var(--line-strong);border-radius:14px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start;background:var(--surface);transition:background .2s,border-color .2s}
+.task.done{border-style:solid;border-color:var(--ok);background:var(--ok-soft)}
+.task.flash{animation:flash 1.1s ease}
+@keyframes flash{0%{box-shadow:0 0 0 4px var(--pink)}100%{box-shadow:0 0 0 0 transparent}}
+.task input{appearance:none;width:22px;height:22px;flex:none;margin-top:1px;border:2px solid var(--line-strong);border-radius:6px;background:var(--surface);cursor:pointer;display:grid;place-items:center}
+.task input:checked{background:var(--ok);border-color:var(--ok)}
+.task input:checked::after{content:'✓';color:var(--surface);font-size:14px;font-weight:700}
+.task .body{display:flex;flex-direction:column;gap:2px}
+.task .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--faint)}
+.task .title{font-size:14.5px;font-weight:700;color:var(--ink-deep)}
+.task.done .title{color:var(--muted);text-decoration:line-through}
+
+.bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--line-strong);box-shadow:0 -6px 20px rgba(35,32,70,.08);display:flex;flex-direction:column;gap:8px;z-index:10}
+.bar .row{display:flex;align-items:center;gap:10px}
+.bar .prog{font-family:var(--mono);font-size:11px;color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
+.bar .meter{flex:1;height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.bar .meter i{display:block;height:100%;background:var(--cyan);border-radius:99px;transition:width .3s}
+.bar button.jump{all:unset;display:flex;align-items:center;gap:10px;width:100%;cursor:pointer;padding:2px 0}
+.bar .label{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--faint)}
+.bar .next-title{font-size:14.5px;font-weight:700;color:var(--ink-deep);flex:1;text-align:left}
+.bar .arrow{flex:none;color:var(--pink);font-size:18px}
+.bar.clear .next-title{color:var(--ok)}
+
+.bar .ask{all:unset;flex:none;cursor:pointer;font-size:12px;font-weight:700;color:var(--link);border:1.5px solid var(--line-strong);border-radius:999px;padding:3px 12px;background:var(--surface)}
+.bar .ask[aria-expanded="true"]{background:var(--lilac)}
+.chat{display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--line);padding-bottom:10px;max-height:min(52vh,420px)}
+.chat .log{overflow-y:auto;display:flex;flex-direction:column;gap:8px;min-height:0}
+.chat .msg{font-size:13.5px;line-height:1.6;padding:8px 12px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-width:92%}
+.chat .me{align-self:flex-end;background:var(--lilac);color:var(--ink-deep)}
+.chat .ai{align-self:flex-start;background:var(--paper);border:1px solid var(--line)}
+.chat .ai.wait{color:var(--faint)}
+.chat .note{font-size:11.5px;color:var(--faint)}
+.chat form{display:flex;gap:8px}
+.chat .voice-btn{appearance:none;width:36px;height:36px;padding:0;border:1.5px solid var(--line-strong);border-radius:8px;background:var(--surface);cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center}
+.chat .voice-btn:hover{background:var(--lilac)}
+.chat .voice-btn.recording{background:var(--wait-soft);border-color:var(--wait)}
+.chat textarea{flex:1;min-width:0;resize:none;font:inherit;font-size:14px;color:var(--ink-deep);background:var(--surface);border:1.5px solid var(--line-strong);border-radius:10px;padding:8px 10px;height:2.6em}
+.chat button{font:inherit;font-size:13px;font-weight:700;border:0;border-radius:10px;padding:0 14px;cursor:pointer;background:var(--ink);color:var(--paper)}
+.chat button.stop{background:var(--wait-soft);color:var(--ink-deep);border:1.5px solid var(--line-strong)}
+.chat button:disabled{opacity:.5;cursor:default}
+.chat .kmode{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.chat .kmode button{padding:4px 12px;font-size:12px;background:var(--surface);color:var(--ink-deep);border:1.5px solid var(--line-strong);border-radius:999px}
+.chat .kmode button[aria-pressed="true"]{background:var(--lilac)}
+.chat .kctx{font-size:11.5px;color:var(--muted);flex:1;min-width:0;overflow-wrap:anywhere}
+.task .kbtn{all:unset;align-self:flex-start;cursor:pointer;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--link);border:1.5px solid var(--line-strong);border-radius:999px;padding:2px 10px;background:var(--surface)}
+.task .kbtn:hover{background:var(--lilac)}
+.task .kact{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.task .kact .kbtn{margin-top:0}
+.task .kact .kok{background:var(--ok-soft)}
+.task .kact.approved .kok{border-color:var(--ok)}
+.task .kbtn:disabled{opacity:.5;cursor:default}
+.task .kact .kno{background:var(--wait-soft)}
+.task .kact.rejected .kno{border-color:var(--wait)}
+.task .kstate{font-size:11.5px;font-weight:700;color:var(--ok)}
+.bar .ksend{font:inherit;font-size:13.5px;font-weight:700;border:0;border-radius:10px;padding:10px 14px;cursor:pointer;background:var(--ok);color:var(--surface);width:100%}
+.bar .ksend:disabled{background:var(--line);color:var(--faint);cursor:default}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap" id="wrap"></div>
+
+<div class="bar" id="bar">
+  <div class="row">
+    <span class="prog" id="prog">0 / 0</span>
+    <div class="meter"><i id="meter-fill" style="width:0%"></i></div>
+  </div>
+  <button type="button" class="jump" id="jump">
+    <span class="label">次にやること</span>
+    <span class="next-title" id="next-title">—</span>
+    <span class="arrow" aria-hidden="true">↓</span>
+  </button>
+</div>
+
+<script>
+(function(){
+  var R;
+  try{ R = JSON.parse(document.getElementById('board').textContent); }
+  catch(e){ document.getElementById('wrap').innerHTML = '<p>ボードのJSONが読めません：' + String(e.message) + '</p>'; return; }
+
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function md(s){ return esc(s).replace(/\[([^\]]+)\]\((https:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>'); }
+
+  var b = R.board || {};
+  document.title = (b.title || 'タスクボード');
+
+  var h = '';
+  if (R.sample) h += '<p class="sample">見本：' + esc(R.sample) + '</p>';
+
+  h += '<header>' +
+       (b.eyebrow ? '<span class="eyebrow">' + esc(b.eyebrow) + '</span>' : '') +
+       '<h1>' + esc(b.title || 'タスクボード') + '</h1>' +
+       (b.lede ? '<p class="lede">' + md(b.lede) + '</p>' : '') +
+       '</header>';
+
+  var TASKS = [];
+  (R.blocks || []).forEach(function(block, i){
+    if (block.type === 'task'){
+      TASKS.push(block.id);
+      h += '<div class="task" data-id="' + esc(block.id) + '">' +
+           '<input type="checkbox" id="c-' + esc(block.id) + '" aria-labelledby="l-' + esc(block.id) + '">' +
+           '<div class="body">' + (block.tag ? '<span class="tag">' + esc(block.tag) + '</span>' : '') +
+           '<label class="title" id="l-' + esc(block.id) + '" for="c-' + esc(block.id) + '">' + md(block.title) + '</label></div></div>';
+      return;
+    }
+    var hid = 'h-b' + i;
+    var head = block.title ? '<h2 id="' + hid + '">' + esc(block.title) + '</h2>' : '';
+    var body = '';
+    switch (block.type){
+      case 'text':
+        body = (block.body || []).map(function(p){ return '<p>' + md(p) + '</p>'; }).join('');
+        break;
+      case 'list':
+        body = '<ul class="plain">' + (block.items || []).map(function(it){ return '<li><b>✓</b><span>' + md(it) + '</span></li>'; }).join('') + '</ul>';
+        break;
+      case 'table':
+        var hd = block.head || [];
+        body = '<div class="tw"><table><thead><tr>' + hd.map(function(x){ return '<th>' + esc(x) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+          (block.rows || []).map(function(r){ return '<tr>' + r.map(function(x){ return '<td>' + md(x) + '</td>'; }).join('') + '</tr>'; }).join('') +
+          '</tbody></table></div>';
+        break;
+      case 'issue':
+        body = '<div class="issue"><b>' + md(block.headline) + '</b>' + (block.body ? md(block.body) : '') + '</div>';
+        break;
+      default:
+        body = '<p class="lede">未対応のブロック：' + esc(block.type) + '</p>';
+    }
+    h += '<section id="' + hid + '-s">' + head + body + '</section>';
+  });
+
+  document.getElementById('wrap').innerHTML = h;
+
+  var KEY = 'sfc-board-' + (b.key || 'default') + '-v1';
+  var state = {};
+  (R.done || []).forEach(function(id){ state[id] = true; });
+  try {
+    var raw = localStorage.getItem(KEY);
+    if (raw) state = Object.assign(state, JSON.parse(raw) || {});
+  } catch(e){}
+
+  function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){} }
+
+  var bar = document.getElementById('bar');
+  var prog = document.getElementById('prog');
+  var fill = document.getElementById('meter-fill');
+  var nextTitle = document.getElementById('next-title');
+
+  function render(){
+    var doneCount = 0;
+    TASKS.forEach(function(id){
+      var box = document.getElementById('c-' + id);
+      var card = document.querySelector('.task[data-id="' + id + '"]');
+      var checked = !!state[id];
+      box.checked = checked;
+      card.classList.toggle('done', checked);
+      if (checked) doneCount++;
+    });
+    prog.textContent = doneCount + ' / ' + TASKS.length;
+    fill.style.width = (TASKS.length ? Math.round(doneCount / TASKS.length * 100) : 0) + '%';
+
+    var pending = TASKS.find(function(id){ return !state[id]; });
+    if (pending) {
+      nextTitle.textContent = document.getElementById('l-' + pending).textContent;
+      bar.classList.remove('clear');
+      bar.dataset.target = pending;
+    } else {
+      nextTitle.textContent = TASKS.length ? 'すべて完了。お疲れさま。' : '—';
+      bar.classList.add('clear');
+      bar.dataset.target = '';
+    }
+  }
+
+  TASKS.forEach(function(id){
+    var el = document.getElementById('c-' + id);
+    if (!el) return;
+    el.addEventListener('change', function(e){
+      state[id] = e.target.checked;
+      save();
+      render();
+    });
+  });
+
+  document.getElementById('jump').addEventListener('click', function(){
+    var target = bar.dataset.target;
+    if (!target) return;
+    var card = document.querySelector('.task[data-id="' + target + '"]');
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.remove('flash');
+    void card.offsetWidth;
+    card.classList.add('flash');
+  });
+
+  // クロコ用：あとからタスクを挟む・各タスクを取り出す
+  window.__board = {
+    tasks: function(){ return TASKS.slice(); },
+    onAdd: null,
+    addTask: function(id, tag, title, afterId){
+      if (document.getElementById('c-' + id)) return;
+      var el = document.createElement('div');
+      el.className = 'task'; el.dataset.id = id;
+      el.innerHTML = '<input type="checkbox" id="c-' + esc(id) + '" aria-labelledby="l-' + esc(id) + '">' +
+        '<div class="body"><span class="tag">' + esc(tag) + '</span><label class="title" id="l-' + esc(id) + '" for="c-' + esc(id) + '">' + md(title) + '</label></div>';
+      var after = afterId ? document.querySelector('.task[data-id="' + afterId + '"]') : null;
+      var idx = after ? TASKS.indexOf(afterId) + 1 : TASKS.length;
+      if (after) after.parentNode.insertBefore(el, after.nextSibling);
+      else {
+        var all = document.querySelectorAll('.task');
+        var last = all[all.length - 1];
+        if (last) last.parentNode.insertBefore(el, last.nextSibling); else document.getElementById('wrap').appendChild(el);
+      }
+      TASKS.splice(idx, 0, id);
+      document.getElementById('c-' + id).addEventListener('change', function(e){ state[id] = e.target.checked; save(); render(); });
+      render();
+      if (typeof window.__board.onAdd === 'function') window.__board.onAdd(id);
+    }
+  };
+
+  render();
+})();
+</script>
+<script>
+/* クロコ：claude.aiでArtifactとして開いたときだけ出る（db・comments機能）。
+   各タスクの「承認」「却下」「再確認」と、タスクを挟む操作は、共有DB（kuroko）に残る。
+   承認・却下：所長の判断（どちらも押していなければ保留）。再確認：そのタスク専用のチャットで、所長とクロコが認識を合わせる。
+   フッターの「承認・却下をクロコに送る」と、チャットの送信は、コメント（sendToClaude）でクロコの会話にも通知が届く */
+(function(){
+  if (!window.claude || !window.claude.use || !window.__board) return;
+  var B = window.__board, bar = document.getElementById('bar');
+  var col = null, cm = null, me = { owner: false }, ctxId = '', mode = 'msg', docs = [], pending = false;
+  var NOTE = '再確認は、そのタスクの個別チャット。クロコが動いたら返事がここに出る。';
+  var THREAD_KEY = 'sfc-kthread-' + (((JSON.parse(document.getElementById('board').textContent) || {}).board || {}).key || 'default');
+
+  function titleOf(id){ var el = document.getElementById('l-' + id); return el ? el.textContent : ''; }
+  function store(k, v){ try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch(e){} return null; }
+
+  var toggle = document.createElement('button');
+  toggle.type = 'button'; toggle.className = 'ask'; toggle.hidden = true;
+  toggle.textContent = 'クロコ'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', 'kchat');
+  bar.querySelector('.row').appendChild(toggle);
+  var dispatch = document.createElement('button');
+  dispatch.type = 'button'; dispatch.className = 'ksend'; dispatch.hidden = true; dispatch.disabled = true;
+  dispatch.textContent = '承認・却下をクロコに送る';
+  bar.appendChild(dispatch);
+
+  var chat = document.createElement('div');
+  chat.className = 'chat'; chat.id = 'kchat'; chat.hidden = true;
+  chat.innerHTML =
+    '<div class="kctx" id="k-ctx"></div>' +
+    '<div class="log" id="k-log" aria-live="polite"></div>' +
+    '<p class="note" id="k-note"></p>' +
+    '<div class="kmode" role="group" aria-label="送り方">' +
+      '<button type="button" data-mode="msg" aria-pressed="true">個別チャット</button>' +
+      '<button type="button" data-mode="add" aria-pressed="false">タスクを挟む</button>' +
+    '</div>' +
+    '<form id="k-form"><textarea id="k-in" rows="1" aria-label="クロコへのメッセージ"></textarea>' +
+    '<button type="submit" id="k-send">送る</button></form>';
+  bar.insertBefore(chat, bar.firstChild);
+  var log = chat.querySelector('#k-log'), note = chat.querySelector('#k-note'), form = chat.querySelector('#k-form'),
+      input = chat.querySelector('#k-in'), send = chat.querySelector('#k-send'), ctxEl = chat.querySelector('#k-ctx'),
+      modeBtns = chat.querySelectorAll('[data-mode]');
+  note.textContent = NOTE;
+
+  function refreshCtx(){
+    var t = ctxId ? titleOf(ctxId) : '';
+    ctxEl.textContent = mode === 'add'
+      ? (t ? '「' + t + '」の次にタスクが入る' : '一番後ろにタスクが入る')
+      : (t ? 'このタスクの個別チャット：' + t : 'ボード全体のチャット');
+    input.placeholder = mode === 'add' ? '挟みたいタスクの内容' : (ctxId ? '認識が合っているか、確かめたいこと' : 'クロコへのメッセージ');
+    renderLog();
+  }
+  function setMode(m){
+    mode = m;
+    modeBtns.forEach(function(b){ b.setAttribute('aria-pressed', String(b.dataset.mode === m)); });
+    refreshCtx();
+  }
+  modeBtns.forEach(function(b){ b.addEventListener('click', function(){ setMode(b.dataset.mode); input.focus(); }); });
+  function open(v){
+    chat.hidden = !v; toggle.setAttribute('aria-expanded', String(v));
+    if (v) { input.focus(); log.scrollTop = log.scrollHeight; }
+  }
+  toggle.addEventListener('click', function(){ if (chat.hidden) { ctxId = ''; setMode('msg'); } open(chat.hidden); });
+  input.addEventListener('keydown', function(e){
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+  });
+
+  function write(rec){
+    if (!col) return Promise.reject(new Error('つながっていない'));
+    rec.at = new Date().toISOString(); rec.by = me.id || ''; rec.byOwner = !!me.owner; rec.status = rec.status || 'new'; rec.reply = '';
+    return col.add(rec);
+  }
+
+  // クロコの会話へ通知（コメントを投稿してクロコに送る）。使えないときは黙って false を返す。操作の本体（DBへの書き込み）は止めない
+  function notify(text, anchorEl){
+    if (!cm || !cm.canSendToClaude || !cm.sendToClaude) return Promise.resolve(false);
+    return cm.canSendToClaude().then(function(v){
+      if (v !== 'available') return false;
+      var tid = store(THREAD_KEY);
+      var fresh = function(){
+        return cm.anchorFor(anchorEl || dispatch).then(function(a){ return cm.sendToClaude({ anchor: a, text: text }); })
+          .then(function(r){ if (r && r.threadId) store(THREAD_KEY, r.threadId); return true; });
+      };
+      if (!tid) return fresh();
+      return cm.sendToClaude({ threadId: tid, text: text }).then(function(){ return true; }, fresh);
+    }).catch(function(){ return false; });
+  }
+
+  // 判断の状態：そのタスクの 承認・却下・取り消し のうち、いちばん新しいもの
+  function decisionOf(id){
+    var last = '';
+    docs.forEach(function(d){
+      if (d.taskId !== id) return;
+      if (d.kind === 'approval') last = 'approval';
+      else if (d.kind === 'reject') last = 'reject';
+      else if (d.kind === 'revoke') last = '';
+    });
+    return last;
+  }
+  // まだクロコに送っていない判断：最新の判断より後に、そのタスクを含む送信（dispatch）が無いもの
+  function unsent(){
+    var out = [];
+    B.tasks().forEach(function(id){
+      if (!decisionOf(id)) return;
+      var at = '';
+      docs.forEach(function(d){ if (d.taskId === id && (d.kind === 'approval' || d.kind === 'reject') && d.at > at) at = d.at; });
+      var sent = docs.some(function(d){ return d.kind === 'dispatch' && d.at > at && (d.taskIds || []).indexOf(id) >= 0; });
+      if (!sent) out.push(id);
+    });
+    return out;
+  }
+  function paintDispatch(){
+    var n = unsent().length;
+    dispatch.disabled = n === 0 || pending;
+    dispatch.textContent = n ? '承認・却下をクロコに送る（' + n + '件）' : '承認・却下をクロコに送る';
+  }
+  dispatch.addEventListener('click', function(){
+    var ids = unsent(); if (!ids.length || pending) return;
+    var ap = ids.filter(function(id){ return decisionOf(id) === 'approval'; });
+    var rj = ids.filter(function(id){ return decisionOf(id) === 'reject'; });
+    var names = function(a){ return a.map(function(id){ return '「' + titleOf(id) + '」'; }).join('、'); };
+    var msg = '所長の判断が届いた。' + (ap.length ? '承認：' + names(ap) + '。' : '') + (rj.length ? '却下：' + names(rj) + '。' : '') +
+      'DBの kuroko の dispatch を読んで対応して。マージ・デプロイなど外に出る操作は、このセッションでの所長の指示を待つ。';
+    pending = true; paintDispatch();
+    Promise.all([
+      write({ kind: 'dispatch', taskId: '', taskIds: ids, approved: ap, rejected: rj, text: names(ids) }),
+      notify(msg, dispatch)
+    ]).then(function(r){
+      dispatch.textContent = r[1] ? '送った。クロコに通知した' : '送った。クロコが読む（通知は届かない環境）';
+    }).catch(function(err){
+      note.textContent = '送れなかった：' + ((err && err.message) || '不明なエラー'); open(true);
+    }).then(function(){ pending = false; setTimeout(paintDispatch, 1600); });
+  });
+
+  function rechecking(id){
+    return docs.some(function(d){ return d.taskId === id && d.kind === 'recheck' && d.status === 'new'; });
+  }
+
+  function decorate(id){
+    var body = document.querySelector('.task[data-id="' + id + '"] .body');
+    if (!body || body.querySelector('.kact')) return;
+    var row = document.createElement('div'); row.className = 'kact';
+    function mk(k, cls){ var b = document.createElement('button'); b.type = 'button'; b.className = 'kbtn ' + cls; b.dataset.k = k; return b; }
+    var ok = mk('ok', 'kok'), no = mk('no', 'kno'), re = mk('re', ''); re.textContent = '再確認';
+    var st = document.createElement('span'); st.className = 'kstate';
+    [ok, no, re, st].forEach(function(x){ row.appendChild(x); });
+    body.appendChild(row);
+    function decide(kind, btn){
+      var cur = decisionOf(id);
+      var next = (cur === kind) ? 'revoke' : kind;
+      btn.disabled = true;
+      write({ kind: next, taskId: id, text: titleOf(id) }).catch(function(err){
+        note.textContent = '送れなかった：' + ((err && err.message) || '不明なエラー'); open(true);
+      }).then(function(){ btn.disabled = false; });
+    }
+    ok.addEventListener('click', function(){ decide('approval', ok); });
+    no.addEventListener('click', function(){ decide('reject', no); });
+    re.addEventListener('click', function(){ ctxId = id; setMode('msg'); open(true); });
+    paint(id);
+  }
+  function paint(id){
+    var row = document.querySelector('.task[data-id="' + id + '"] .kact'); if (!row) return;
+    var d = decisionOf(id), r = rechecking(id);
+    row.querySelector('[data-k="ok"]').textContent = d === 'approval' ? '承認を取り消す' : '承認';
+    row.querySelector('[data-k="no"]').textContent = d === 'reject' ? '却下を取り消す' : '却下';
+    var label = (d === 'approval' ? '承認済み' : d === 'reject' ? '却下' : '') + (d && r ? '・' : '') + (r ? '再確認中' : '');
+    var st = row.querySelector('.kstate'); st.textContent = label;
+    row.classList.toggle('approved', d === 'approval');
+    row.classList.toggle('rejected', d === 'reject');
+  }
+  B.tasks().forEach(decorate);
+  B.onAdd = decorate;
+
+  function renderLog(){
+    log.innerHTML = '';
+    var list = docs.filter(function(d){
+      if (['approval', 'reject', 'revoke', 'dispatch'].indexOf(d.kind) >= 0) return false;
+      return mode === 'add' ? true : (ctxId ? d.taskId === ctxId : !d.taskId);
+    });
+    list.forEach(function(d){
+      var m = document.createElement('div'); m.className = 'msg me';
+      m.textContent = (d.kind === 'insert' ? 'タスクを挟んだ：' : '') + d.text;
+      log.appendChild(m);
+      var st = document.createElement('div');
+      st.className = 'msg ai' + (d.reply ? '' : ' wait');
+      st.textContent = d.reply ? d.reply : (d.kind === 'insert' ? 'ボードに入れた。' : d.status === 'done' ? 'クロコが確認した。' : 'クロコの返事を待っている。（クロコがこのボードを開いたときに読む）');
+      log.appendChild(st);
+    });
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function apply(snap){
+    docs = snap.docs.map(function(x){ var d = x.data() || {}; d.id = x.id; return d; });
+    docs.forEach(function(d){
+      if (d.kind === 'insert' && d.title) B.addTask('x-' + d.id, '挟んだタスク', d.title, d.afterId || '');
+    });
+    B.tasks().forEach(paint);
+    paintDispatch();
+    renderLog();
+  }
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var text = input.value.trim(); if (!text || !col || pending) return;
+    pending = true; send.disabled = true;
+    var isAdd = mode === 'add';
+    var rec = isAdd
+      ? { kind: 'insert', text: text, title: text, taskId: '', afterId: ctxId || '' }
+      : { kind: ctxId ? 'recheck' : 'message', text: text, taskId: ctxId || '' };
+    var ping = isAdd ? Promise.resolve(false)
+      : notify((ctxId ? 'タスク「' + titleOf(ctxId) + '」の再確認：' : 'ボード全体へのメッセージ：') + text + '（DBの kuroko を読んで返事して）', send);
+    Promise.all([write(rec), ping]).then(function(){
+      input.value = ''; note.textContent = '送った。';
+      setTimeout(function(){ open(false); note.textContent = NOTE; }, 900);
+    }).catch(function(err){
+      note.textContent = '送れなかった：' + ((err && err.message) || '不明なエラー');
+    }).then(function(){ pending = false; send.disabled = false; });
+  });
+
+  var soft = function(n){ return window.claude.use(n).catch(function(){ return null; }); };
+  Promise.all([soft('db'), soft('user'), soft('comments')]).then(function(r){
+    var db = r[0], user = r[1]; cm = r[2];
+    if (!db) return;
+    if (user) {
+      try { me.owner = !!(user.isOwner && user.isOwner()); } catch(e){}
+      try { if (user.id) user.id().then(function(id){ me.id = id; }).catch(function(){}); } catch(e){}
+    }
+    col = db.collection('kuroko');
+    toggle.hidden = false; dispatch.hidden = false; setMode('msg');
+    col.orderBy('at').onSnapshot(apply, function(){ note.textContent = 'クロコとのやり取りを読み込めなかった。'; });
+  }).catch(function(){});
+})();
+</script>
