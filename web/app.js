@@ -1,13 +1,12 @@
 'use strict';
-// build.mjs が先頭に SCORE_SOURCE（楽譜エンジンのソース）・WORLD（背景オブジェクトの設定）・EQUIP_LAYERS を入れる。
+// build.mjs が先頭に SCORE_SOURCE（楽譜エンジンのソース）・WORLD（背景オブジェクトの設定）・AREA（エリアの楽譜 areas/forest.json）・EQUIP_LAYERS・ART（ドット絵）を入れる。
 /* SCORE_JS */
 const $=id=>document.getElementById(id);
-const SVG_NS='http://www.w3.org/2000/svg';
 const THEME_NAMES={entrance:'森の入口',deep:'森の奥',mist:'霧の森',clearing:'守り人の広場'};
 const MOOD_TEXT={travel:'ゆっぴとトムは、森の奥へ進んでいる。',battle:'スライムが跳ねてきた。ゆっぴが立ち向かう。',treasure:'宝箱を見つけた。ふたが鳴っている。',boss:'森の守り人が立ちはだかる。',rest:'焚き火のそばで、ひと休み。'};
 const MOOD_MARK={travel:'道',battle:'戦',treasure:'宝',boss:'主'};
 const FLOOR_MS=floorMs('forest');
-const WORKER_MAIN='onmessage=e=>{const t=composeTrack(e.data.state,e.data.world);const wav=encodeWav(renderTrack(t));postMessage({key:t.key,wav},[wav.buffer]);};';
+const WORKER_MAIN='onmessage=e=>{const t=composeTrack(e.data.state,e.data.world,e.data.area);const wav=encodeWav(renderTrack(t));postMessage({key:t.key,wav},[wav.buffer]);};';
 
 let snapshot=null,offset=0,busy=false,loading=false;
 
@@ -30,8 +29,8 @@ const player={
   const state=this.stateFor(g),key=trackKey(state);
   if(key===this.wanted)return;
   this.wanted=key;
-  if(!this.tracks.has(key))this.tracks.set(key,composeTrack(state,WORLD));
-  if(this.urls.has(key))this.apply(key);else{this.worker.postMessage({state,world:WORLD});this.sync();}
+  if(!this.tracks.has(key))this.tracks.set(key,composeTrack(state,WORLD,AREA));
+  if(this.urls.has(key))this.apply(key);else{this.worker.postMessage({state,world:WORLD,area:AREA});this.sync();}
  },
  rendered({key,wav}){
   this.urls.set(key,URL.createObjectURL(new Blob([wav],{type:'audio/wav'})));
@@ -86,56 +85,98 @@ const player={
 };
 
 // 舞台。すべて「いまの曲のコマ番号」から描くので、音と動きがずれない。
+// Canvas に描く。ドット絵は起動時に1度だけ小さな画像にしておき、毎回は貼るだけ。変化があった時だけ描き直す。
+const sprites={
+ cache:new Map(),bg:new Map(),
+ rgba:Object.fromEntries(Object.entries(ART.palette).map(([ch,hex])=>[ch,[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)]])),
+ get(key){
+  let c=this.cache.get(key);if(c!==undefined)return c;
+  const g=ART.grids[key];c=null;
+  if(g){
+   c=document.createElement('canvas');c.width=g.w;c.height=g.h;
+   const ctx=c.getContext('2d'),img=ctx.createImageData(g.w,g.h);
+   for(let i=0;i<g.d.length;i++){const p=this.rgba[g.d[i]];if(!p)continue;img.data.set(p,i*4);img.data[i*4+3]=255;}
+   ctx.putImageData(img,0,0);
+  }
+  this.cache.set(key,c);return c;
+ },
+ // 空と地面は景色ごとの SVG を1度だけ画像にする。
+ loadBackgrounds(){
+  for(const [key,svg] of Object.entries(ART.bg)){
+   const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=320;c.height=180;c.getContext('2d').drawImage(img,0,0);this.bg.set(key,c);stage.dirty=true;};
+   img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  }
+ }
+};
+const SPOTS={owl:[240,62],firefly:[148,64],frog:[232,142],cat:[38,140],hero:[72,138],foe:[196,138],leaves:[258,150]};
 const stage={
- track:null,segment:-1,theme:'',moved:null,gearKey:'',lastFloor:'',
+ track:null,ctx:null,moved:null,gearItems:[],segment:-1,last:'',dirty:true,theme:'',fade:null,
+ init(){const c=$('stage');this.ctx=c.getContext('2d');this.ctx.imageSmoothingEnabled=false;},
  prepare(track){
-  this.track=track;this.segment=-1;
+  this.track=track;this.segment=-1;this.dirty=true;
   this.moved=[0];for(let s=0;s<track.steps;s++)this.moved.push(this.moved[s]+(track.moving[s]?1:0));
  },
- use(parent,attrs){const u=document.createElementNS(SVG_NS,'use');for(const [k,v] of Object.entries(attrs))u.setAttribute(k,v);parent.append(u);return u;},
+ gear(g){const items=[g.equipment?.weapon,g.equipment?.armor].filter(id=>id&&EQUIP_LAYERS[id]);if(items.join()!==this.gearItems.join()){this.gearItems=items;this.dirty=true;}},
  enterSegment(index){
-  const t=this.track,seg=t.segments[index];this.segment=index;
-  if(seg.theme!==this.theme){this.theme=seg.theme;for(const layer of ['far','near'])for(const n of [0,1])$(layer+n).setAttribute('href','#bg-'+seg.theme+'-'+layer);}
-  for(const lane of ['Far','Mid','Near'])$('lane'+lane).replaceChildren();
-  this.objects=t.objects.filter(o=>o.segment===index).map(o=>({o,el:this.use($('lane'+o.lane[0].toUpperCase()+o.lane.slice(1)),{y:o.baseline-o.height,width:o.width,height:o.height})}));
-  $('foe').setAttribute('x',seg.mood==='rest'?'112':'196');
+  const seg=this.track.segments[index];this.segment=index;
+  // 景色が変わる時は、空と地面を 1.2 秒かけてクロスフェードする。
+  if(seg.theme!==this.theme){if(this.theme)this.fade={from:this.theme,start:performance.now()};this.theme=seg.theme;}
   $('floorLabel').textContent=seg.mood==='rest'?'休憩':seg.floor+'F';
   $('themeName').textContent=THEME_NAMES[seg.theme]||'';
   $('sceneText').textContent=MOOD_TEXT[seg.mood];
   player.metadata(seg.floor,seg.theme,seg.mood);
  },
- gear(g){
-  const items=[g.equipment?.weapon,g.equipment?.armor].filter(id=>id&&EQUIP_LAYERS[id]),key=items.join('|');
-  if(key===this.gearKey)return;this.gearKey=key;
-  for(const layer of ['back','front']){const group=$('hero'+(layer==='back'?'Back':'Front'));group.replaceChildren();
-   for(const id of items)if(EQUIP_LAYERS[id].includes(layer))this.use(group,{x:72,y:138,width:32,height:32,'data-item':id,'data-layer':layer});}
+ put(key,x,y){const c=sprites.get(key);if(c)this.ctx.drawImage(c,Math.round(x)-VIEW_LEFT,Math.round(y)-36);},
+ tiles(theme,layer,offset,alpha){
+  const c=sprites.bg.get(theme+'-'+layer);if(!c)return;
+  const x=-Math.round(offset%320)-VIEW_LEFT;this.ctx.globalAlpha=alpha;
+  this.ctx.drawImage(c,x,-36);this.ctx.drawImage(c,x+320,-36);this.ctx.globalAlpha=1;
+ },
+ lane(name,moved,step){
+  for(const o of this.track.objects){
+   if(o.lane!==name)continue;
+   const sx=((o.x-moved*o.pxPerStep)%o.period+o.period)%o.period;
+   for(const x of [sx,sx-o.period])if(x+o.width>VIEW_LEFT&&x<VIEW_RIGHT)this.put(`obj:${o.id}-${o.frames[step]}`,x,o.baseline-o.height);
+  }
  },
  draw(seconds){
   const t=this.track;if(!t)return;
-  const {step,fraction}=stepAt(t,seconds),index=Math.floor(step/SEGMENT_STEPS);
+  const {step,fraction}=stepAt(t,seconds),index=Math.floor(step/SEGMENT_STEPS),seg=t.segments[index],local=step-seg.start;
   if(index!==this.segment)this.enterSegment(index);
-  const moved=this.moved[step]+(t.moving[step]?fraction:0),local=moved-this.moved[t.segments[index].start];
-  $('bgFar').setAttribute('transform',`translate(${-Math.round(moved*2%320)} 0)`);
-  $('bgNear').setAttribute('transform',`translate(${-Math.round(moved*8%320)} 0)`);
-  for(const [id,frames] of Object.entries(t.actors))$(id)?.setAttribute('href','#px-'+frames[step]);
-  $('cat').style.display=t.actors.cat?'':'none';
+  const moved=t.scrollBase+this.moved[step]+(t.moving[step]?fraction:0);
+  // 敵は階の頭の4コマで右から滑り込む（楽譜側でもその間は鳴らさない）。
+  const foe=t.actors.foe[step],entering=!/^(spark|fire)/.test(foe)&&local<4;
+  const foeX=seg.mood==='rest'?112:SPOTS.foe[0]+(entering?Math.round(110*(1-(local+fraction)/4)**2):0);
+  const fadeAlpha=this.fade?Math.min(1,(performance.now()-this.fade.start)/1200):1;
+  const sig=[step,Math.round(moved*2),Math.round(moved*4),Math.round(moved*8),foeX,fadeAlpha.toFixed(2),this.theme,this.gearItems.join()].join('|');
+  this.rail(t,index,(local+fraction)/SEGMENT_STEPS);
+  if(sig===this.last&&!this.dirty)return;
+  this.last=sig;this.dirty=false;
+  const ctx=this.ctx;ctx.clearRect(0,0,256,144);
+  // 遠景 → 中景 → 地面 → キャラ → 手前の物 の順に重ねる。
+  if(this.fade&&fadeAlpha<1)this.tiles(this.fade.from,'far',moved*2,1);
+  this.tiles(this.theme,'far',moved*2,fadeAlpha);
+  this.lane('far',moved,step);this.lane('mid',moved,step);
+  if(this.fade&&fadeAlpha<1)this.tiles(this.fade.from,'near',moved*8,1);
+  this.tiles(this.theme,'near',moved*8,fadeAlpha);
+  if(fadeAlpha>=1)this.fade=null;
+  for(const id of ['owl','firefly','frog','cat'])if(t.actors[id])this.put(t.actors[id][step],...SPOTS[id]);
   const pose=t.actors.hero[step].slice(5);
-  for(const u of document.querySelectorAll('#heroBack use,#heroFront use'))u.setAttribute('href',`#px-eq-${u.dataset.item}-${u.dataset.layer}-${pose}`);
-  const k=step-t.segments[index].start;
-  for(const {o,el} of this.objects){
-   const x=Math.round(o.x-local*o.pxPerStep),shown=x+o.width>0&&x<SCREEN_WIDTH;
-   el.style.display=shown?'':'none';
-   if(shown){el.setAttribute('x',x);el.setAttribute('href',`#px-obj-${o.id}-${o.frames[k]}`);}
-  }
-  this.rail(t,index,(step-t.segments[index].start+fraction)/SEGMENT_STEPS);
+  for(const item of this.gearItems)this.put(`eq:${item}-back-${pose}`,...SPOTS.hero);
+  this.put(t.actors.hero[step],...SPOTS.hero);
+  for(const item of this.gearItems)this.put(`eq:${item}-front-${pose}`,...SPOTS.hero);
+  this.put(foe,foeX,SPOTS.foe[1]);
+  this.lane('near',moved,step);
+  this.put(t.actors.leaves[step],...SPOTS.leaves);
  },
  rail(t,index,progress){
-  const floor=t.running?t.segments[index].floor:snapshot?.game.floor??1;
+  const floor=t.running?t.segments[index].floor:snapshot?.game.floor??1,p=t.running?Math.round(progress*50)/50:0,key=floor+'|'+p+'|'+t.running;
+  if(key===this.railKey)return;this.railKey=key;
   $('rail').dataset.resting=String(!t.running);
   [...$('rail').children].forEach((li,i)=>{
    const state=i+1<floor?'done':i+1===floor?'now':'next';
    if(li.dataset.state!==state)li.dataset.state=state;
-   li.style.setProperty('--p',state==='now'&&t.running?progress.toFixed(3):'0');
+   li.style.setProperty('--p',state==='now'?String(p):'0');
   });
  }
 };
@@ -188,6 +229,8 @@ async function command(action){
 }
 
 buildRail();
+stage.init();
+sprites.loadBackgrounds();
 player.init();
 $('play').onclick=()=>player.toggle();
 $('rest').onclick=()=>command({type:'toggle'});

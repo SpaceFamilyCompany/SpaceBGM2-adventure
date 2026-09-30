@@ -26,11 +26,13 @@ test('every party sound starts exactly when a character enters a sounding frame'
 
 test('fills, breaks and swing keep the loop from sounding the same every floor',()=>{
  const t=composeTrack(run,world),hero=t.actors.hero,tail=seg=>hero.slice(seg*SEGMENT_STEPS+28,seg*SEGMENT_STEPS+32).join(' ');
+ // 道の階は進むたびに表情が変わる: 1階 そのまま → 3階 ラン → 5階 ため → 7階 ブレイク
  assert.equal(tail(0),'hero-walk-0 hero-walk-1 hero-walk-2 hero-walk-3');
- assert.equal(tail(2),'hero-walk-3 hero-walk-3 hero-walk-0 hero-walk-2','ため: floor 3 holds, then catches up with two steps');
+ assert.equal(tail(2),'hero-walk-0 hero-walk-2 hero-walk-0 hero-walk-2','ラン: floor 3 ends with quick steps');
+ assert.equal(tail(4),'hero-walk-3 hero-walk-3 hero-walk-0 hero-walk-2','ため: floor 5 holds, then catches up with two steps');
  assert.ok(t.moving.slice(0,SEGMENT_STEPS).every(Boolean));
- assert.ok(t.moving.slice(0,SEGMENT_STEPS*4).some(m=>!m),'a travel floor stops for a break bar');
- const beat=60/t.bpm;assert.ok(t.stepTimes[1]-t.stepTimes[0]<t.stepTimes[SEGMENT_STEPS*2+1]-t.stepTimes[SEGMENT_STEPS*2],'floor 3 swings the off-beat later');
+ assert.ok(t.moving.slice(SEGMENT_STEPS*6,SEGMENT_STEPS*7).some(m=>!m),'floor 7 stops for a break bar');
+ const beat=60/t.bpm;assert.ok(t.stepTimes[1]-t.stepTimes[0]<t.stepTimes[SEGMENT_STEPS*4+1]-t.stepTimes[SEGMENT_STEPS*4],'floor 5 swings the off-beat later');
  assert.equal(stepAt(t,t.stepTimes[70]+.001).step,70);
  assert.ok(Math.abs(secondsForFloor(t,4,.5)-3.5*16*beat)<1e-9);
 });
@@ -56,4 +58,20 @@ test('every pitched note is a tone of its bar chord and stops ringing when the c
    assert.ok(n.end<=t.stepTimes[Math.min(t.steps,((n.step>>3)+1)*8)]+1e-9,'note ends with its bar');
   }
  }
+});
+
+test('the area is one long scroll: scenery never pops when the floor changes, and gates pass Yuppi at each road floor',async()=>{
+ const {readFile}=await import('node:fs/promises');const {layoutArea,HERO_X,VIEW_LEFT,VIEW_RIGHT}=await import('../web/score.mjs');
+ const area=JSON.parse(await readFile('areas/forest.json','utf8'));
+ assert.deepEqual(area,JSON.parse(JSON.stringify(layoutArea(world))),'areas/forest.json is up to date (node scripts/make-area.mjs)');
+ const t=composeTrack(run,world,area);
+ // どのコマでも、画面上の物の位置は前のコマから「歩いた分」しか動かない（階の境目で入れ替わらない）
+ const moved=[0];for(let s=0;s<t.steps;s++)moved.push(moved[s]+(t.moving[s]?1:0));
+ for(const o of t.objects)for(let s=1;s<t.steps;s++){
+  const dx=(moved[s]-moved[s-1])*o.pxPerStep;assert.ok(dx===0||dx===o.pxPerStep);
+ }
+ for(const seg of t.segments.filter(s=>s.mood==='travel')){
+  assert.ok(area.lanes.near.objects.some(o=>o.id==='arch'&&o.x===HERO_X-32+moved[seg.start]*8),'gate at floor '+seg.floor);
+ }
+ assert.ok(VIEW_RIGHT-VIEW_LEFT===256);
 });

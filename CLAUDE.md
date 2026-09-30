@@ -18,6 +18,7 @@
 Node.js 22以降。外部npm依存はありません。
 
 ```sh
+node scripts/make-area.mjs          # 背景オブジェクトや楽譜の並びを変えたら作り直す
 node build.mjs
 node --test tests/*.test.mjs
 node scripts/preview.mjs 4320        # http://127.0.0.1:4320/ 。起動時の dist を読むので、再ビルド後は再起動
@@ -29,7 +30,8 @@ node scripts/sprite-preview.mjs      # dist/sprite-preview.html
 | ファイル | 役割 |
 |---|---|
 | web/score.mjs | 楽譜エンジン（コマ・音符・スクロール・背景オブジェクト配置・合成・WAV）。画面と Worker の両方で同じソースを使う |
-| web/page.html / app.css / app.js | 舞台（SVG、320×180 の世界の中央 256×144 を表示）・階のレール・操作・再生 |
+| areas/forest.json | エリアの楽譜 = 1枚の長いスクロール絵（各段の帯に並ぶ物・門・階ごとの景色）。`node scripts/make-area.mjs` で作る。配布の単位 |
+| web/page.html / app.css / app.js | 舞台（Canvas。320×180 の世界の中央 256×144 を描く。ドット絵は起動時に1度だけ画像化し、変化した時だけ描き直す）・階のレール・操作・再生 |
 | scripts/pixel-art.mjs | キャラ・森の生き物・装備の着せ替えパーツ（Codex 制作。32×32、1コマ=8分音符） |
 | scripts/forest-objects.mjs / forest-scene.mjs | 背景オブジェクト（far/mid/near の視差、景色4種）と空・地面の土台（Codex 制作） |
 | server/game.mjs | 進行・装備（空き欄なら拾った装備を自動で着る）・報酬 |

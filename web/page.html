@@ -13,27 +13,9 @@
 <style>/* APP_CSS */</style>
 </head>
 <body>
-<!-- SPRITE_SHEET -->
 <main class="app">
  <section class="stage-wrap" aria-label="冒険の様子">
-  <svg id="stage" class="stage" viewBox="32 36 256 144" shape-rendering="crispEdges" role="img" aria-labelledby="sceneText">
-   <g id="bgFar"><use id="far0" width="320" height="180"/><use id="far1" x="320" width="320" height="180"/></g>
-   <g id="laneFar"></g>
-   <g id="laneMid"></g>
-   <g id="bgNear"><use id="near0" width="320" height="180"/><use id="near1" x="320" width="320" height="180"/></g>
-   <g id="actors">
-    <use id="owl" x="240" y="62" width="32" height="32"/>
-    <use id="firefly" x="148" y="64" width="32" height="32"/>
-    <use id="frog" x="232" y="142" width="32" height="32"/>
-    <use id="cat" x="38" y="140" width="32" height="32"/>
-    <g id="heroBack"></g>
-    <use id="hero" x="72" y="138" width="32" height="32"/>
-    <g id="heroFront"></g>
-    <use id="foe" x="196" y="138" width="32" height="32"/>
-   </g>
-   <g id="laneNear"></g>
-   <use id="leaves" x="258" y="150" width="32" height="32"/>
-  </svg>
+  <canvas id="stage" class="stage" width="256" height="144" role="img" aria-labelledby="sceneText"></canvas>
   <div class="hud">
    <p class="place"><b id="floorLabel" class="floor">1F</b><span id="themeName">森の入口</span></p>
    <p id="saveStatus" class="save" data-state="loading">接続中</p>

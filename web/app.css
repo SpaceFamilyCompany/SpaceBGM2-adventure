@@ -23,7 +23,7 @@ button,input{font:inherit;color:inherit}
 
 /* 舞台 */
 .stage-wrap{position:relative;background:var(--ink);border-bottom:2px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
-.stage{display:block;width:100%;height:auto;aspect-ratio:16/9;max-width:100%;image-rendering:pixelated}
+.stage{display:block;width:100%;height:auto;aspect-ratio:16/9;max-width:100%;image-rendering:pixelated;background:var(--ink)}
 .hud{position:absolute;inset:env(safe-area-inset-top,0px) 0 auto 0;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:10px 12px;pointer-events:none}
 .hud p{margin:0}
 .place{display:flex;align-items:baseline;gap:8px;font-family:var(--dot);font-size:13px;letter-spacing:.06em;color:var(--moon);text-shadow:2px 2px 0 var(--night)}

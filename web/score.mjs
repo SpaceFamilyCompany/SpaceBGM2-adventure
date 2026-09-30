@@ -6,8 +6,8 @@
 export const SEGMENT_STEPS = 32; // 16拍 = 1階
 export const FLOORS = 10;
 export const MUSIC_RATE = 22050;
-export const HERO_X = 88; // ゆっぴの立ち位置（画面 320 幅のうち）
-export const SCREEN_WIDTH = 320;
+export const HERO_X = 88; // ゆっぴの立ち位置の中心（世界 320×180 の座標）
+export const VIEW_LEFT = 32, VIEW_RIGHT = 288; // 画面に映る範囲（世界の中央 256×144）
 
 // どのコマで音が鳴るか。scripts/pixel-art.mjs の SOUND_FRAMES と一致させる（テストで確認）。
 export const SOUND_FRAMES = {
@@ -104,17 +104,55 @@ function melody(zone){
 
 export function trackKey(s){return [s.zone||'forest',s.running===false?'rest':'run',s.running===false?s.floor||1:'',s.weapon||'none',s.armor||'none',levelTier(s.level||1),s.companion?1:0].join('|');}
 
+// 区間の並び。冒険中は 1〜10階、休憩中は焚き火の4区間。道を進む階は、進むたびに表情（スウィング・フィル・ブレイク）を変える。
+function planFor(state,world){
+ let walked=0;
+ const floors=state.running===false?Array.from({length:4},()=>({floor:state.floor||1,mood:'rest'})):Array.from({length:FLOORS},(_,i)=>({floor:i+1,mood:moodForFloor(i+1)}));
+ return floors.map((seg,k)=>{const style=STYLES[(seg.mood==='travel'?walked++:k)%4];return {...seg,index:k,start:k*SEGMENT_STEPS,theme:themeFor(world,seg.floor,seg.mood),style:seg.mood==='travel'||seg.mood==='rest'?style:{...style,breakBar:null}};});
+}
+const breakAt=(plan,s)=>{const seg=plan[Math.floor(s/SEGMENT_STEPS)];return seg.style.breakBar===Math.floor(s%SEGMENT_STEPS/8);};
+// 歩いているコマ（道の階で、ブレイクの小節以外）と、その累計。
+function walkOf(plan){
+ const steps=plan.length*SEGMENT_STEPS,moving=Array.from({length:steps},(_,s)=>plan[Math.floor(s/SEGMENT_STEPS)].mood==='travel'&&!breakAt(plan,s)),moved=[0];
+ for(let s=0;s<steps;s++)moved.push(moved[s]+(moving[s]?1:0));
+ return {moving,moved};
+}
+
+// エリア = 1枚の長いスクロール絵 = 楽譜。3つの段それぞれに、ダンジョン1周で進む長さの帯があり、そこに物が並ぶ。
+// 物の景色（森の入口・森の奥…）は「その物が画面の右端から現れる時の階」で決まるので、景色は切れ目なく移り変わる。
+// 門は、道の階が始まる瞬間にゆっぴの真上を通る位置に置く。帯の端は先頭へつながり、1周してもそのまま続く。
+export function layoutArea(world,zone='forest'){
+ const plan=planFor({zone,running:true},world),{moved}=walkOf(plan),total=moved[moved.length-1],steps=plan.length*SEGMENT_STEPS;
+ const r=rng(zone+':area'),lanes={};
+ for(const [lane,spec] of Object.entries(world.LANES)){
+  const pxPerStep=spec.pxPerBeat/2,period=total*pxPerStep,items=[];
+  const themeAt=x=>{const m=((x-VIEW_RIGHT)/pxPerStep%total+total)%total,s=Math.min(steps-1,moved.findIndex(v=>v>=m));return plan[Math.floor(Math.max(0,s)/SEGMENT_STEPS)].theme;};
+  const arch=world.OBJECTS.arch;
+  if(lane==='near'&&arch)for(const seg of plan)if(seg.mood==='travel')items.push({id:'arch',x:HERO_X-arch.width/2+moved[seg.start]*pxPerStep});
+  const clear=(x,w)=>items.every(i=>{const o=world.OBJECTS[i.id];return [-period,0,period].every(p=>x+w+8<=i.x+p||x>=i.x+p+o.width+8);});
+  let x=r()*48;
+  while(x<period-16){
+   const pool=Object.entries(world.OBJECTS).filter(([id,o])=>id!=='arch'&&o.lane===lane&&o.themes.includes(themeAt(x))).map(([id,o])=>({id,...o}));
+   if(!pool.length){x+=32;continue;}
+   const o=pick(r,pool);
+   if(!(x+o.width<=period&&clear(x,o.width))){x+=8;continue;}
+   items.push({id:o.id,x:Math.round(x)});
+   x+=o.width+(lane==='near'?16:lane==='mid'?12:8)+r()*(lane==='far'?24:lane==='mid'?40:48);
+  }
+  items.sort((a,b)=>a.x-b.x);
+  lanes[lane]={pxPerStep,period,objects:items};
+ }
+ return {zone,bpm:ZONE_SCORES[zone].bpm,floors:plan.map(({floor,mood,theme})=>({floor,mood,theme})),floorStart:plan.map(seg=>moved[seg.start]),walk:total,lanes};
+}
+
 // state: {zone, running, floor, weapon, armor, level, companion}
-// world: scripts/forest-objects.mjs の {LANES, THEMES, OBJECTS}（無ければ背景オブジェクトなし）
-// 冒険中は 1〜10階の10区間、休憩中は焚き火の4区間。
-export function composeTrack(state,world=null){
- const zone=ZONE_SCORES[state.zone]?state.zone:'forest',score=ZONE_SCORES[zone],tier=levelTier(state.level||1);
+// world: scripts/forest-objects.mjs の {LANES, THEMES, OBJECTS}。area: layoutArea の結果（areas/forest.json）。
+export function composeTrack(state,world=null,area=world?layoutArea(world,state.zone||'forest'):null){
+ const zone=ZONE_SCORES[state.zone]?state.zone:'forest',score=ZONE_SCORES[zone],tier=levelTier(state.level||1),running=state.running!==false;
  const weapon=WEAPON_VOICE[state.weapon]?state.weapon:'none',armor=ARMOR_FX[state.armor]?state.armor:'none';
- const plan=(state.running===false?Array.from({length:4},()=>({floor:state.floor||1,mood:'rest'})):Array.from({length:FLOORS},(_,i)=>({floor:i+1,mood:moodForFloor(i+1)})))
-  .map((seg,k)=>{const style=STYLES[k%4];return {...seg,index:k,start:k*SEGMENT_STEPS,theme:themeFor(world,seg.floor,seg.mood),style:seg.mood==='travel'||seg.mood==='rest'?style:{...style,breakBar:null}};});
- const steps=plan.length*SEGMENT_STEPS,beat=60/score.bpm,prev=s=>(s+steps-1)%steps;
+ const plan=planFor(state,world),steps=plan.length*SEGMENT_STEPS,beat=60/score.bpm,prev=s=>(s+steps-1)%steps;
  const segAt=s=>plan[Math.floor(s/SEGMENT_STEPS)],chordAt=s=>score.chords[(s>>3)%8],local=s=>s%SEGMENT_STEPS;
- const inFill=s=>local(s)>=SEGMENT_STEPS-4,inBreak=s=>segAt(s).style.breakBar===Math.floor(local(s)/8);
+ const inFill=s=>local(s)>=SEGMENT_STEPS-4,inBreak=s=>breakAt(plan,s);
  // スウィング: 裏拍（奇数コマ）を区間ごとの量だけ後ろへ。コマの切り替えも同じ時刻にずらすので、絵もずれない。
  const stepTimes=Array.from({length:steps+1},(_,s)=>s===steps?steps/2*beat:Math.floor(s/2)*beat+(s%2?segAt(s).style.swing*beat:0));
  const tune=melody(zone),notes=[],voice=WEAPON_VOICE[weapon],fx=ARMOR_FX[armor];
@@ -153,9 +191,10 @@ export function composeTrack(state,world=null){
  const heroFrame=s=>+hero[s].split('-')[2],fighting=s=>['battle','boss'].includes(segAt(s).mood);
  const cast={hero};
  if(state.companion)cast.cat=Array.from({length:steps},(_,s)=>partyEntry('cat',CAT_ACTION,a=>a==='walk'?'catwalk':a)(s));
- // 敵は、ゆっぴの斬撃が当たったコマ（attack-2）と次のコマでひるむ。道中の光は半分の小節だけ瞬く。
+ // 敵は階の頭で右から滑り込む（最初の4コマは跳ねずに近づくので鳴らない）。斬撃が当たったコマ（attack-2）と次のコマでひるむ。
  cast.foe=Array.from({length:steps},(_,s)=>{
   const [sprite,action]=FOE[segAt(s).mood];
+  if(sprite!=='spark'&&sprite!=='fire'&&local(s)<4)return `${sprite}-${action}-${[1,2,1,2][local(s)]}`;
   if(fighting(s)&&heroFrame(s)===2)return `${sprite}-hit-0`;
   if(fighting(s)&&heroFrame(s)===3&&heroFrame(prev(s))===2)return `${sprite}-hit-1`;
   if(sprite==='spark'&&(s>>3)%4<2)return `${sprite}-${action}-3`;
@@ -173,48 +212,37 @@ export function composeTrack(state,world=null){
   const [sprite,action,frame]=entry.split('-'),key=sprite+'.'+action;
   if(SOUND_FRAMES[key]?.includes(+frame)&&entry!==frames[prev(s)])sounds[key](s);
  });
- const moving=hero.map((entry,s)=>segAt(s).mood==='travel'&&!inBreak(s));
- const objects=world?plan.flatMap(seg=>placeObjects(world,seg,moving,note,chordAt)):[];
+ const {moving,moved}=running?walkOf(plan):{moving:Array(steps).fill(false),moved:Array(steps+1).fill(0)};
+ // 休憩中は、その階の入口で立ち止まった景色のまま。
+ const scrollBase=running||!area?0:area.floorStart[Math.max(0,Math.min(FLOORS-1,(state.floor||1)-1))];
+ const objects=world&&area?sceneObjects(world,area,moved,scrollBase,steps,note,chordAt):[];
  // 夜風（背景の空気）。小節の頭で和音がゆっくり息をする。
  for(let s=0;s<steps;s+=8)chordAt(s).forEach(n=>note(s,'pad',n+12,segAt(s).mood==='rest'||inBreak(s)?.05:.035,'main',2.2));
- return {key:trackKey({...state,zone,weapon,armor}),zone,bpm:score.bpm,running:state.running!==false,
-  segments:plan.map(({floor,mood,theme,start})=>({floor,mood,theme,start})),steps,stepTimes,duration:stepTimes[steps],moving,notes,actors:cast,objects,fx};
+ return {key:trackKey({...state,zone,weapon,armor}),zone,bpm:score.bpm,running,
+  segments:plan.map(({floor,mood,theme,start})=>({floor,mood,theme,start})),steps,stepTimes,duration:stepTimes[steps],moving,scrollBase,notes,actors:cast,objects,fx};
 }
 
-// 背景オブジェクトを区間ごと・段ごとの「帯」に並べる。帯の長さ = その区間で進む距離。
+// エリアの帯から、この曲で画面に映る物を取り出し、各コマの動きと音を決める。
 // 手前（near）の物は、ゆっぴが触れた時だけ動いて鳴る。中景・遠景は数小節に1回の出番の間だけ動いて鳴る。
-function placeObjects(world,seg,moving,note,chordAt){
- const r=rng(seg.theme+':'+seg.mood+':'+seg.index),placed=[],movedSteps=[0];
- for(let k=0;k<SEGMENT_STEPS;k++)movedSteps.push(movedSteps[k]+(moving[seg.start+k]?1:0));
- const travelled=movedSteps[SEGMENT_STEPS];
- for(const [lane,spec] of Object.entries(world.LANES)){
-  const pxPerStep=spec.pxPerBeat/2,strip=Math.max(SCREEN_WIDTH+64,travelled*pxPerStep+SCREEN_WIDTH);
-  const pool=Object.entries(world.OBJECTS).filter(([id,o])=>o.lane===lane&&o.themes.includes(seg.theme)&&id!=='arch').map(([id,o])=>({id,...o}));
-  const items=[];
-  // 門は区間の頭でゆっぴの真上を通る（歩いている区間だけ）。
-  const arch=lane==='near'&&travelled&&world.OBJECTS.arch;
-  if(arch)items.push({id:'arch',...arch,x:HERO_X-arch.width/2});
-  let x=r()*48;
-  while(pool.length&&x<strip-24){
-   const o=pick(r,pool);
-   if(!items.some(i=>x<i.x+i.width+8&&x+o.width+8>i.x))items.push({...o,x});
-   x+=o.width+(lane==='near'?40:lane==='mid'?28:16)+r()*(lane==='far'?40:72);
-  }
-  items.forEach((o,i)=>{
-   const idle=[0,1,2,3].find(f=>!o.sound?.frames.includes(f))??0,phase=i%(LANE_PERIOD[lane]||1),frames=[];
-   for(let k=0;k<SEGMENT_STEPS;k++){
-    const s=seg.start+k,sx=o.x-movedSteps[k]*pxPerStep,bar=k>>3;
-    const active=lane==='near'?sx<=HERO_X+8&&sx+o.width>=HERO_X-8&&(o.id!=='arch'||k<4):sx+o.width>0&&sx<SCREEN_WIDTH&&(bar+phase)%LANE_PERIOD[lane]===0;
-    const frame=active?s%4:idle;frames.push(frame);
-    if(active&&o.sound?.frames.includes(frame)&&(k===0||frames[k-1]!==frame)){
-     const [tone,octave]=OBJECT_PITCH[o.sound.voice]??[0,12];
-     note(s,o.sound.voice,chordAt(s)[tone]+octave,LANE_GAIN[lane]*(o.id==='arch'?2:1));
-    }
+function sceneObjects(world,area,moved,scrollBase,steps,note,chordAt){
+ const shown=[];
+ for(const [lane,{pxPerStep,period,objects}] of Object.entries(area.lanes))objects.forEach((item,i)=>{
+  const o=world.OBJECTS[item.id];if(!o)return;
+  const idle=[0,1,2,3].find(f=>!o.sound?.frames.includes(f))??0,phase=i%(LANE_PERIOD[lane]||1),frames=[];
+  let seen=false;
+  for(let s=0;s<steps;s++){
+   const sx=((item.x-(scrollBase+moved[s])*pxPerStep)%period+period)%period,copies=[sx,sx-period];
+   const visible=copies.some(c=>c+o.width>VIEW_LEFT&&c<VIEW_RIGHT);seen||=visible;
+   const active=lane==='near'?copies.some(c=>c<=HERO_X+8&&c+o.width>=HERO_X-8)&&(item.id!=='arch'||s%SEGMENT_STEPS<4):visible&&((s>>3)+phase)%LANE_PERIOD[lane]===0;
+   const frame=active?s%4:idle;frames.push(frame);
+   if(active&&o.sound?.frames.includes(frame)&&(s===0||frames[s-1]!==frame)){
+    const [tone,octave]=OBJECT_PITCH[o.sound.voice]??[0,12];
+    note(s,o.sound.voice,chordAt(s)[tone]+octave,LANE_GAIN[lane]*(item.id==='arch'?2:1));
    }
-   placed.push({id:o.id,lane,segment:seg.index,x:o.x,width:o.width,height:o.height,baseline:o.baseline,pxPerStep,frames:frames.join('')});
-  });
- }
- return placed;
+  }
+  if(seen)shown.push({id:item.id,lane,x:item.x,width:o.width,height:o.height,baseline:o.baseline,pxPerStep,period,frames:frames.join('')});
+ });
+ return shown;
 }
 
 // 楽譜を波形にする。末尾からはみ出た余韻は先頭へ回し込み、ループの継ぎ目を消す。
