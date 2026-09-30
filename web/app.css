@@ -27,7 +27,7 @@ button,input{font:inherit;color:inherit}
 .hud{position:absolute;inset:env(safe-area-inset-top,0px) 0 auto 0;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:10px 12px;pointer-events:none}
 .hud p{margin:0}
 .place{display:flex;align-items:baseline;gap:8px;font-family:var(--dot);font-size:13px;letter-spacing:.06em;color:var(--moon);text-shadow:2px 2px 0 var(--night)}
-.floor{font-size:22px;line-height:1;font-weight:400;color:var(--glow)}
+.card-name{font-size:20px;line-height:1;font-weight:400;color:var(--glow)}
 .save{font-family:var(--dot);font-size:11px;letter-spacing:.08em;color:var(--mist);text-shadow:1px 1px 0 var(--night)}
 .save::before{content:"";display:inline-block;width:6px;height:6px;margin-right:6px;background:var(--mist);vertical-align:1px}
 .save[data-state=ok]::before{background:var(--glow)}
@@ -36,17 +36,17 @@ button,input{font:inherit;color:inherit}
 /* 下の面 */
 .panel{display:flex;flex-direction:column;gap:16px;padding-inline:var(--gutter);padding-block:16px 24px}
 
-/* ダンジョンの階 = 曲の進行。いまの階の中を再生位置が進む */
-.rail{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:3px;margin:0;padding:0;list-style:none}
-.rail li{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0 5px;background:var(--ink);border:1px solid var(--line);font-family:var(--dot);font-size:11px;line-height:1.2;color:var(--mist);overflow:hidden}
-.rail li b{font-weight:400;font-size:clamp(10px,3.2vw,13px);color:var(--moon)}
-.rail li i{font-style:normal}
-.rail li::after{content:"";position:absolute;left:0;bottom:0;height:3px;width:calc(var(--p,0)*100%);background:var(--glow)}
-.rail li[data-state=done]{background:var(--panel)}
-.rail li[data-state=done]::after{width:100%;background:var(--line)}
-.rail li[data-state=now]{border-color:var(--glow);background:var(--panel)}
-.rail li[data-state=now] b{color:var(--glow)}
-.rail[data-resting=true] li{opacity:.45}
+/* イベントカードの列 = 曲の進行。めくったカードは表、いまのカードの中を再生位置が進み、この先は伏せてある */
+.cards{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:3px;margin:0;padding:0;list-style:none}
+.cards li{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;aspect-ratio:3/4;min-height:34px;background:var(--panel);border:1px solid var(--line);font-family:var(--dot);line-height:1.1;color:var(--moon);overflow:hidden}
+.cards li b{font-weight:400;font-size:clamp(11px,3.4vw,15px)}
+.cards li i{font-style:normal;font-size:clamp(9px,2.6vw,11px);color:var(--mist);min-height:1em}
+.cards li::after{content:"";position:absolute;left:0;bottom:0;height:3px;width:calc(var(--p,0)*100%);background:var(--glow)}
+.cards li[data-state=next]{background:repeating-linear-gradient(45deg,var(--ink) 0 3px,var(--night) 3px 6px);color:var(--line)}
+.cards li[data-state=done]{background:var(--ink);color:var(--mist);opacity:.7}
+.cards li[data-state=now]{border-color:var(--glow);background:var(--panel);transform:translateY(-3px)}
+.cards li[data-state=now] b{color:var(--glow)}
+.cards[data-resting=true] li{opacity:.45}
 
 .scene-text{margin:0;min-height:1.7em;font-size:15px;color:var(--moon);text-wrap:balance}
 

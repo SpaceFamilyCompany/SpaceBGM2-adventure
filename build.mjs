@@ -1,7 +1,9 @@
 import {readFile,writeFile,mkdir,copyFile} from 'node:fs/promises';
 import {appIcon} from './scripts/app-icon.mjs';
 import {PALETTE,EQUIPMENT_LAYERS} from './scripts/pixel-art.mjs';
-import {CREATURE_SPRITES as SPRITES} from './scripts/creature-motion.mjs';
+import {CREATURE_SPRITES} from './scripts/creature-motion.mjs';
+import {MONSTER_SPRITES} from './scripts/monsters.mjs';
+const SPRITES={...CREATURE_SPRITES,...MONSTER_SPRITES};
 import {LANES,THEMES,OBJECTS} from './scripts/forest-objects.mjs';
 import {forestScene} from './scripts/forest-scene.mjs';
 
@@ -10,8 +12,6 @@ const score=(await readFile('web/score.mjs','utf8')).replaceAll('export ','');
 // 背景オブジェクトの設定（絵のグリッドは除く）と、装備ごとの重ねレイヤー。
 const world={LANES,THEMES,OBJECTS:Object.fromEntries(Object.entries(OBJECTS).map(([id,{frames,...o}])=>[id,o]))};
 const equipLayers=Object.fromEntries(Object.entries(EQUIPMENT_LAYERS).map(([id,layers])=>[id,Object.keys(layers)]));
-// エリアの楽譜（1枚の長いスクロール絵）。scripts/make-area.mjs で作る。
-const area=JSON.parse(await readFile('areas/forest.json','utf8'));
 
 // ドット絵は文字のグリッドのまま渡し、画面側で1度だけ画像にする（毎フレームは貼るだけ）。
 const grids={};
@@ -25,7 +25,7 @@ for(const {id} of THEMES){const svg=forestScene(id);for(const layer of ['far','n
 const art={palette:PALETTE,grids,bg};
 
 const css=await readFile('web/app.css','utf8');
-const app='const SCORE_SOURCE='+JSON.stringify(score)+';\nconst WORLD='+JSON.stringify(world)+';\nconst AREA='+JSON.stringify(area)+';\nconst EQUIP_LAYERS='+JSON.stringify(equipLayers)+';\nconst ART='+JSON.stringify(art)+';\n'
+const app='const SCORE_SOURCE='+JSON.stringify(score)+';\nconst WORLD='+JSON.stringify(world)+';\nconst EQUIP_LAYERS='+JSON.stringify(equipLayers)+';\nconst ART='+JSON.stringify(art)+';\n'
  +(await readFile('web/app.js','utf8')).replace('/* SCORE_JS */',()=>score);
 const html=(await readFile('web/page.html','utf8')).replace('/* APP_CSS */',()=>css).replace('/* APP_JS */',()=>app);
 

@@ -1,4 +1,4 @@
-// 1階 = 曲の16拍（88 BPM）。web/score.mjs の floorMs と一致させ、再生位置と冒険の進行をそろえる。
+// イベントカード1枚 = 曲の16拍（88 BPM）。web/score.mjs の cardMs と一致させ、再生位置と冒険の進行をそろえる。
 export const STEP_MS = 10909;
 export const OFFLINE_LIMIT = 8 * 60 * 60 * 1000;
 export const EQUIPMENT = [
@@ -9,11 +9,27 @@ export const EQUIPMENT = [
  {id:'moon-blade',zone:'castle',slot:'weapon',name:'月影の剣',icon:'⚔️',power:3,rarity:'月影'},
  {id:'star-cloak',zone:'castle',slot:'armor',name:'星詠みの外套',icon:'🌌',power:3,rarity:'月影'}
 ];
+// イベントカードの山札。web/score.mjs の deckFor と同じ乱数・同じ手順（テストで一致を確認）。
+// 道5・戦闘4（敵1〜3体）・宝箱2をシャッフルし、最初は必ず道、最後に森の守り人。めくり終えたら次の束をシャッフルする。
+export const DECK_SIZE=12;
+export const MONSTERS=['slime','mushling','beetle','wisp'];
+export const MONSTER_NAMES={slime:'スライム',mushling:'キノコの子',beetle:'カブトムシ',wisp:'鬼火',guardian:'森の守り人'};
+function rng(seed){let s=0;for(const c of seed)s=Math.imul(s^c.charCodeAt(0),2654435761)>>>0;return()=>{s=s+0x6D2B79F5>>>0;let t=Math.imul(s^s>>>15,1|s);t^=t+Math.imul(t^t>>>7,61|t);return((t^t>>>14)>>>0)/4294967296;};}
+export function deckFor(cycle){
+ const r=rng('forest:deck:'+cycle),cards=['travel','travel','travel','travel','travel','battle','battle','battle','battle','treasure','treasure'];
+ for(let i=cards.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[cards[i],cards[j]]=[cards[j],cards[i]];}
+ const first=cards.indexOf('travel');[cards[0],cards[first]]=[cards[first],cards[0]];
+ return [...cards.map(kind=>{if(kind!=='battle')return {kind,foes:0,monsters:[]};const foes=1+Math.floor(r()*3);return {kind,foes,monsters:Array.from({length:foes},()=>MONSTERS[Math.floor(r()*MONSTERS.length)])};}),{kind:'boss',foes:1,monsters:['guardian']}];
+}
+export function cardFor(g){return deckFor(g.cycle)[g.card];}
 export function migrateGame(input) {
  const g=structuredClone(input);
- g.version=2;
+ g.version=3;
  g.inventory ??= [];
  g.equipment ??= {weapon:null,armor:null};
+ // v2 までは「階（floor）」。v3 から山札の何束目（cycle）・何枚目（card）。
+ if(g.card==null){g.cycle=0;g.card=0;}
+ delete g.floor;
  return g;
 }
 export function equipmentPower(g) {return EQUIPMENT.filter(item=>g.inventory?.includes(item.id)&&g.equipment?.[item.slot]===item.id).reduce((sum,item)=>sum+item.power,0);}
@@ -26,14 +42,17 @@ export const ZONES = [
  {id:'castle',name:'月影の古城',subtitle:'忘れられた旋律を探して',level:5,mult:3,icon:'🏰',enemy:'影の騎士',boss:'月影の竜',bpm:108}
 ];
 export function initialGame(now = Date.now()) {
- return {version:2,inventory:[],equipment:{weapon:null,armor:null},coins:60,crystals:0,level:1,companion:false,zone:'forest',floor:1,clears:{forest:0,cave:0,castle:0},running:true,lastAt:now,steps:0,totalCoins:0,logs:[{id:0,text:'ゆっぴは蛍火の森へ出発した。',kind:'travel',at:now}]};
+ return {version:2,inventory:[],equipment:{weapon:null,armor:null},coins:60,crystals:0,level:1,companion:false,zone:'forest',cycle:0,card:0,clears:{forest:0,cave:0,castle:0},running:true,lastAt:now,steps:0,totalCoins:0,logs:[{id:0,text:'ゆっぴは蛍火の森へ出発した。',kind:'travel',at:now}]};
 }
 export function unlocked(g,id) {
  const i=ZONES.findIndex(z=>z.id===id);
  return i>=0 && g.level>=ZONES[i].level && (i===0 || g.clears[ZONES[i-1].id]>0);
 }
 export function cost(g) { return 40 * g.level; }
-export function eventFor(g) { return g.floor===10 ? 'boss' : g.floor%4===0 ? 'treasure' : g.floor%2===0 ? 'battle' : 'travel'; }
+export function eventFor(g) { return cardFor(g).kind; }
+// 次のカードへ。束の最後までめくったら、次の束をシャッフルする。
+function nextCard(g){g.card++;if(g.card>=DECK_SIZE){g.card=0;g.cycle++;}}
+function newDeck(g){g.card=0;g.cycle++;}
 function log(g,text,kind,at) { g.logs.unshift({id:g.steps,text,kind,at}); g.logs=g.logs.slice(0,24); }
 export function advanceGame(input,now=Date.now()) {
  const g=migrateGame(input);
@@ -47,16 +66,16 @@ export function advanceGame(input,now=Date.now()) {
  const beforeCoins=g.coins, beforeCrystals=g.crystals;
  for(let i=0;i<n;i++) {
   g.lastAt+=STEP_MS;g.steps++;
-  const z=ZONES.find(z=>z.id===g.zone),event=eventFor(g);
-  const reward=Math.round((event==='boss'?70:event==='treasure'?25:event==='battle'?15:8)*z.mult*(g.companion?1.2:1));
+  const z=ZONES.find(z=>z.id===g.zone),card=cardFor(g),event=card.kind;
+  const reward=Math.round((event==='boss'?70:event==='treasure'?25:event==='battle'?15*card.foes:8)*z.mult*(g.companion?1.2:1));
   if(event==='boss' && combatPower(g) < z.level+1) {
-   log(g,z.boss+'は手強い！拠点で休み、再び探索へ。','retreat',g.lastAt);g.floor=1;continue;
+   log(g,z.boss+'は手強い！拠点で休み、再び探索へ。','retreat',g.lastAt);newDeck(g);continue;
   }
   g.coins+=reward;g.totalCoins+=reward;
-  if(event==='boss') {g.clears[g.zone]++;g.crystals+=z.mult;log(g,z.boss+'を倒した！ '+reward+'Gと星のかけら'+z.mult+'個。','boss',g.lastAt);g.floor=1;}
-  else { log(g,event==='treasure'?'宝箱を発見！ '+reward+'G。':event==='battle'?z.enemy+'を倒した！ '+reward+'G。':'道を進み、'+reward+'Gを見つけた。',event,g.lastAt);g.floor++; }
+  if(event==='boss') {g.clears[g.zone]++;g.crystals+=z.mult;log(g,z.boss+'を倒した！ '+reward+'Gと星のかけら'+z.mult+'個。','boss',g.lastAt);nextCard(g);}
+  else { log(g,event==='treasure'?'宝箱を発見！ '+reward+'G。':event==='battle'?[...new Set(card.monsters)].map(m=>MONSTER_NAMES[m]).join('と')+(card.foes>1?'の群れ':'')+'を倒した！ '+reward+'G。':'道を進み、'+reward+'Gを見つけた。',event,g.lastAt);nextCard(g); }
   const roll=lootRoll(g.steps,g.zone);
-  if(event==='boss'||event==='treasure'||(event==='battle'&&roll%100<25)) {
+  if(event==='boss'||event==='treasure'||(event==='battle'&&roll%100<15+10*card.foes)) {
    const items=EQUIPMENT.filter(item=>item.zone===g.zone);
    const missing=items.filter(item=>!g.inventory.includes(item.id));
    const item=(event==='boss'&&missing.length?missing:items)[roll%((event==='boss'&&missing.length)?missing.length:items.length)];
@@ -75,10 +94,10 @@ export function applyAction(input,action,now=Date.now()) {
   case 'unequip': if(!['weapon','armor'].includes(action.slot))throw new Error('不明な装備欄です。');g.equipment[action.slot]=null;break;
   case 'train': {const price=cost(g);if(g.coins<price) throw new Error('ゴールドが足りません。');if(g.level>=30)throw new Error('レベルは上限です。');g.coins-=price;g.level++;log(g,'ゆっぴがLv.'+g.level+'に成長した。','level',now);break;}
   case 'hire': if(g.companion)throw new Error('トムはもう仲間です。');if(g.coins<120)throw new Error('ゴールドが足りません。');g.coins-=120;g.companion=true;log(g,'白キジ猫のトムが仲間になった！ 報酬が20％増える。','level',now);break;
-  case 'zone': if(!unlocked(g,action.zone))throw new Error('まだこの場所には行けません。');if(action.zone!==g.zone){g.zone=action.zone;g.floor=1;g.lastAt=now;log(g,ZONES.find(z=>z.id===g.zone).name+'へ旅立った。','travel',now);}break;
+  case 'zone': if(!unlocked(g,action.zone))throw new Error('まだこの場所には行けません。');if(action.zone!==g.zone){g.zone=action.zone;newDeck(g);g.lastAt=now;log(g,ZONES.find(z=>z.id===g.zone).name+'へ旅立った。','travel',now);}break;
   case 'toggle':g.running=!g.running;g.lastAt=now;log(g,g.running?'冒険を再開した。':'焚き火でひと休み。','travel',now);break;
   default:throw new Error('不明な操作です。');
  }
  return g;
 }
-export function publicGame(g,now,report={}) {return {game:g,equipmentCatalog:EQUIPMENT,combatPower:combatPower(g),equipmentPower:equipmentPower(g),zones:ZONES.map(z=>({...z,unlocked:unlocked(g,z.id)})),trainCost:cost(g),serverNow:now,event:eventFor(g),report};}
+export function publicGame(g,now,report={}) {return {game:g,equipmentCatalog:EQUIPMENT,combatPower:combatPower(g),equipmentPower:equipmentPower(g),zones:ZONES.map(z=>({...z,unlocked:unlocked(g,z.id)})),trainCost:cost(g),serverNow:now,event:eventFor(g),card:cardFor(g),deck:deckFor(g.cycle),deckSize:DECK_SIZE,report};}

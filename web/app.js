@@ -1,12 +1,15 @@
 'use strict';
-// build.mjs が先頭に SCORE_SOURCE（楽譜エンジンのソース）・WORLD（背景オブジェクトの設定）・AREA（エリアの楽譜 areas/forest.json）・EQUIP_LAYERS・ART（ドット絵）を入れる。
+// build.mjs が先頭に SCORE_SOURCE（楽譜エンジンのソース）・WORLD（背景オブジェクトの設定）・EQUIP_LAYERS・ART（ドット絵）を入れる。
 /* SCORE_JS */
 const $=id=>document.getElementById(id);
 const THEME_NAMES={entrance:'森の入口',deep:'森の奥',mist:'霧の森',clearing:'守り人の広場'};
-const MOOD_TEXT={travel:'ゆっぴとトムは、森の奥へ進んでいる。',battle:'スライムが跳ねてきた。ゆっぴが立ち向かう。',treasure:'宝箱を見つけた。ふたが鳴っている。',boss:'森の守り人が立ちはだかる。',rest:'焚き火のそばで、ひと休み。'};
-const MOOD_MARK={travel:'道',battle:'戦',treasure:'宝',boss:'主'};
-const FLOOR_MS=floorMs('forest');
-const WORKER_MAIN='onmessage=e=>{const t=composeTrack(e.data.state,e.data.world,e.data.area);const wav=encodeWav(renderTrack(t));postMessage({key:t.key,wav},[wav.buffer]);};';
+const MOOD_TEXT={travel:'ゆっぴとトムは、森の奥へ進んでいる。',treasure:'宝箱を見つけた。ふたが鳴っている。',boss:'森の守り人が立ちはだかる。',rest:'焚き火のそばで、ひと休み。'};
+const MONSTER_NAMES={slime:'スライム',mushling:'キノコの子',beetle:'カブトムシ',wisp:'鬼火',guardian:'森の守り人'};
+const CARD_NAME={travel:'道',battle:'戦闘',treasure:'宝箱',boss:'守り人',rest:'休憩'};
+const CARD_MARK={travel:'道',battle:'戦',treasure:'宝',boss:'主'};
+const CARD_MS=cardMs('forest');
+const sceneText=seg=>seg.mood==='battle'?[...new Set(seg.monsters)].map(m=>MONSTER_NAMES[m]).join('と')+(seg.foes>1?'が'+seg.foes+'体':'が')+'現れた。ゆっぴが立ち向かう。':MOOD_TEXT[seg.mood];
+const WORKER_MAIN='onmessage=e=>{const t=composeTrack(e.data.state,e.data.world);const wav=encodeWav(renderTrack(t));postMessage({key:t.key,wav},[wav.buffer]);};';
 
 let snapshot=null,offset=0,busy=false,loading=false;
 
@@ -18,23 +21,27 @@ const player={
   this.worker.onmessage=e=>this.rendered(e.data);
   this.worker.onerror=()=>showError('曲を作れませんでした。ページを再読み込みしてください。');
   const a=this.audio;a.loop=true;a.preload='auto';a.setAttribute('playsinline','');
+  // ループが一周した瞬間に、次の束の曲ができていれば切り替える（画面を開いている間）。
+  a.addEventListener('timeupdate',()=>{const t=a.currentTime,wrapped=t+1<(this.lastTime??0);this.lastTime=t;if(wrapped&&this.track?.running&&this.nextKey&&this.urls.has(this.nextKey)&&this.nextKey!==this.track.key){this.wanted=this.nextKey;this.apply(this.nextKey);}});
   a.addEventListener('loadedmetadata',()=>{if(this.pendingSeek!=null){a.currentTime=this.pendingSeek%a.duration;this.pendingSeek=null;}});
   for(const type of ['play','pause'])a.addEventListener(type,()=>this.sync());
   a.addEventListener('error',()=>{this.sync();showError('曲を読み込めませんでした。再生ボタンでもう一度お試しください。');});
   if('mediaSession' in navigator)for(const [action,run] of [['play',()=>this.toggle(true)],['pause',()=>this.audio.pause()],['stop',()=>this.audio.pause()]]){try{navigator.mediaSession.setActionHandler(action,run);}catch{}}
  },
- stateFor(g){return {zone:'forest',running:g.running,floor:g.floor,weapon:g.equipment?.weapon,armor:g.equipment?.armor,level:1,companion:true};},
+ stateFor(g){return {zone:'forest',running:g.running,cycle:g.cycle,card:g.card,weapon:g.equipment?.weapon,armor:g.equipment?.armor,level:1,companion:true};},
  // ゲームの状態に合う曲を用意する（装備・休憩が変わった時だけ作り直す）。
  want(g){
   const state=this.stateFor(g),key=trackKey(state);
   if(key===this.wanted)return;
   this.wanted=key;
-  if(!this.tracks.has(key))this.tracks.set(key,composeTrack(state,WORLD,AREA));
-  if(this.urls.has(key))this.apply(key);else{this.worker.postMessage({state,world:WORLD,area:AREA});this.sync();}
+  if(!this.tracks.has(key))this.tracks.set(key,composeTrack(state,WORLD));
+  if(this.urls.has(key))this.apply(key);else{this.worker.postMessage({state,world:WORLD});this.sync();}
+  // 束の残りが4枚になったら、次の束の曲を裏で作っておく（ループの継ぎ目でそのまま切り替える）。
+  if(g.running&&g.card>=DECK_SIZE-4){const next={...state,cycle:state.cycle+1,card:0},nextKey=trackKey(next);this.nextKey=nextKey;if(!this.tracks.has(nextKey)){this.tracks.set(nextKey,composeTrack(next,WORLD));this.worker.postMessage({state:next,world:WORLD});}}
  },
  rendered({key,wav}){
   this.urls.set(key,URL.createObjectURL(new Blob([wav],{type:'audio/wav'})));
-  for(const [k,url] of this.urls)if(this.urls.size>4&&k!==key&&k!==this.track?.key){URL.revokeObjectURL(url);this.urls.delete(k);this.tracks.delete(k);}
+  for(const [k,url] of this.urls)if(this.urls.size>4&&k!==key&&k!==this.track?.key&&k!==this.nextKey){URL.revokeObjectURL(url);this.urls.delete(k);this.tracks.delete(k);}
   if(key===this.wanted)this.apply(key);
  },
  // 曲を差し替える。冒険中どうしなら同じ位置から続けるので、装備を変えると音色だけがその場で変わる。
@@ -50,7 +57,7 @@ const player={
  target(){
   const t=this.visual();if(!t||!snapshot)return 0;
   if(!t.running)return performance.now()/1000%t.duration;
-  const g=snapshot.game;return secondsForFloor(t,g.floor,(Date.now()+offset-g.lastAt)/FLOOR_MS);
+  const g=snapshot.game;return secondsForCard(t,g.card,(Date.now()+offset-g.lastAt)/CARD_MS);
  },
  visual(){return this.track??this.tracks.get(this.wanted)??null;},
  clock(){return !this.audio.paused&&this.track?this.audio.currentTime:this.target();},
@@ -78,9 +85,9 @@ const player={
   if('mediaSession' in navigator)navigator.mediaSession.playbackState=playing?'playing':'paused';
   document.body.dataset.waiting=String(waiting);
  },
- metadata(floor,theme,mood){
+metadata(seg){
   if(!('mediaSession' in navigator)||!('MediaMetadata' in window))return;
-  navigator.mediaSession.metadata=new MediaMetadata({title:(mood==='rest'?'焚き火':floor+'F '+THEME_NAMES[theme]),artist:'SpaceBGM',album:'蛍火の森'});
+  navigator.mediaSession.metadata=new MediaMetadata({title:(seg.mood==='rest'?'焚き火':CARD_NAME[seg.mood]+' · '+THEME_NAMES[seg.theme]),artist:'SpaceBGM',album:'蛍火の森'});
  }
 };
 
@@ -109,6 +116,8 @@ const sprites={
  }
 };
 const SPOTS={owl:[240,62],firefly:[148,64],frog:[232,142],cat:[38,140],hero:[72,138],foe:[196,138],leaves:[258,150]};
+// 敵の並び（1〜3体）。奥の敵ほど遅れて滑り込む。
+const FOE_X={1:[196],2:[184,222],3:[170,202,236]};
 const stage={
  track:null,ctx:null,moved:null,gearItems:[],segment:-1,last:'',dirty:true,theme:'',fade:null,
  init(){const c=$('stage');this.ctx=c.getContext('2d');this.ctx.imageSmoothingEnabled=false;},
@@ -121,10 +130,10 @@ const stage={
   const seg=this.track.segments[index];this.segment=index;
   // 景色が変わる時は、空と地面を 1.2 秒かけてクロスフェードする。
   if(seg.theme!==this.theme){if(this.theme)this.fade={from:this.theme,start:performance.now()};this.theme=seg.theme;}
-  $('floorLabel').textContent=seg.mood==='rest'?'休憩':seg.floor+'F';
+  $('cardLabel').textContent=CARD_NAME[seg.mood]+(seg.mood==='battle'&&seg.foes>1?' ×'+seg.foes:'');
   $('themeName').textContent=THEME_NAMES[seg.theme]||'';
-  $('sceneText').textContent=MOOD_TEXT[seg.mood];
-  player.metadata(seg.floor,seg.theme,seg.mood);
+  $('sceneText').textContent=sceneText(seg);
+  player.metadata(seg);
  },
  put(key,x,y){const c=sprites.get(key);if(c)this.ctx.drawImage(c,Math.round(x)-VIEW_LEFT,Math.round(y)-36);},
  tiles(theme,layer,offset,alpha){
@@ -145,11 +154,10 @@ const stage={
   if(index!==this.segment)this.enterSegment(index);
   const moved=t.scrollBase+this.moved[step]+(t.moving[step]?fraction:0);
   // 敵は階の頭の4コマで右から滑り込む（楽譜側でもその間は鳴らさない）。
-  const foe=t.actors.foe[step],entering=!/^(spark|fire)/.test(foe)&&local<4;
-  const foeX=seg.mood==='rest'?112:SPOTS.foe[0]+(entering?Math.round(110*(1-(local+fraction)/4)**2):0);
+  const count=seg.mood==='battle'?seg.foes:1,foes=[0,1,2].map(k=>{const entry=t.actors['foe'+k]?.[step];if(!entry)return null;const lead=4+k*2,entering=!/^(spark|fire)/.test(entry)&&local<lead;return {entry,x:seg.mood==='rest'?112:FOE_X[count][k]+(entering?Math.round(110*(1-(local+fraction)/lead)**2):0)};}).filter(Boolean);
   const fadeAlpha=this.fade?Math.min(1,(performance.now()-this.fade.start)/1200):1;
-  const sig=[step,Math.round(moved*2),Math.round(moved*4),Math.round(moved*8),foeX,fadeAlpha.toFixed(2),this.theme,this.gearItems.join()].join('|');
-  this.rail(t,index,(local+fraction)/SEGMENT_STEPS);
+  const sig=[step,Math.round(moved*2),Math.round(moved*4),Math.round(moved*8),foes.map(f=>f.x).join(','),fadeAlpha.toFixed(2),this.theme,this.gearItems.join()].join('|');
+  this.cards(t,index,(local+fraction)/SEGMENT_STEPS);
   if(sig===this.last&&!this.dirty)return;
   this.last=sig;this.dirty=false;
   const ctx=this.ctx;ctx.clearRect(0,0,256,144);
@@ -167,24 +175,30 @@ const stage={
   for(const item of this.gearItems)this.put(`eq:${item}-back-${pose}`,...SPOTS.hero);
   this.put(t.actors.hero[step],...SPOTS.hero);
   for(const item of this.gearItems)this.put(`eq:${item}-front-${pose}`,...SPOTS.hero);
-  this.put(foe,foeX,SPOTS.foe[1]);
+  for(const f of [...foes].reverse())this.put(f.entry,f.x,SPOTS.foe[1]);
   this.lane('near',moved,step,o=>o.id==='arch');
   this.put(t.actors.leaves[step],...SPOTS.leaves);
  },
- rail(t,index,progress){
-  const floor=t.running?t.segments[index].floor:snapshot?.game.floor??1,p=t.running?Math.round(progress*50)/50:0,key=floor+'|'+p+'|'+t.running;
-  if(key===this.railKey)return;this.railKey=key;
-  $('rail').dataset.resting=String(!t.running);
-  [...$('rail').children].forEach((li,i)=>{
-   const state=i+1<floor?'done':i+1===floor?'now':'next';
+ // イベントカードの列。めくったカードは表、いまのカードは光り、この先は伏せる（最後の守り人だけは見えている）。
+ cards(t,index,progress){
+  const deck=snapshot?.deck,card=t.running?t.segments[index].card:snapshot?.game.card??0;if(!deck)return;
+  const p=t.running?Math.round(progress*50)/50:0,key=[snapshot.game.cycle,card,p,t.running].join('|');
+  if(key===this.cardKey)return;this.cardKey=key;
+  $('cards').dataset.resting=String(!t.running);
+  [...$('cards').children].forEach((li,i)=>{
+   const c=deck[i],state=i<card?'done':i===card?'now':'next',open=state!=='next'||c.kind==='boss';
+   const mark=open?CARD_MARK[c.kind]:'?',sub=open&&c.kind==='battle'?'×'+c.foes:'';
    if(li.dataset.state!==state)li.dataset.state=state;
+   if(li.firstChild.textContent!==mark)li.firstChild.textContent=mark;
+   if(li.lastChild.textContent!==sub)li.lastChild.textContent=sub;
+   li.setAttribute('aria-label',open?(CARD_NAME[c.kind]+(sub?' '+c.foes+'体':'')):'まだ伏せられたカード');
    li.style.setProperty('--p',state==='now'?String(p):'0');
   });
  }
 };
 
-function buildRail(){
- $('rail').replaceChildren(...Array.from({length:FLOORS},(_,i)=>{const li=document.createElement('li'),b=document.createElement('b'),mark=document.createElement('i');b.textContent=(i+1)+'F';mark.textContent=MOOD_MARK[moodForFloor(i+1)];li.append(b,mark);li.dataset.state='next';return li;}));
+function buildCards(){
+ $('cards').replaceChildren(...Array.from({length:DECK_SIZE},()=>{const li=document.createElement('li'),b=document.createElement('b'),i=document.createElement('i');li.append(b,i);li.dataset.state='next';return li;}));
 }
 function loop(){
  requestAnimationFrame(loop);
@@ -230,7 +244,7 @@ async function command(action){
  finally{busy=false;render();}
 }
 
-buildRail();
+buildCards();
 stage.init();
 sprites.loadBackgrounds();
 player.init();

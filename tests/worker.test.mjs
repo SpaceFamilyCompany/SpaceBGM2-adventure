@@ -6,13 +6,15 @@ test('stage provides every element the client uses and every sprite the score ca
  const ids=new Set([...html.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));
  const used=[...html.matchAll(/\$\('([^']+)'\)/g)].map(m=>m[1]);assert.ok(used.length>10);
  for(const id of used)assert.ok(ids.has(id),'Missing UI element '+id);
- const art=JSON.parse(html.match(/^const ART=(.*);$/m)[1]),area=JSON.parse(html.match(/^const AREA=(.*);$/m)[1]);
+ const art=JSON.parse(html.match(/^const ART=(.*);$/m)[1]);
  const {composeTrack}=await import('../web/score.mjs');const world=await import('../scripts/forest-objects.mjs');
  for(const running of [true,false])for(const [weapon,armor] of [[null,null],['leaf-blade','moss-cloak']]){
-  const t=composeTrack({zone:'forest',running,floor:4,weapon,armor,companion:true},world,area);
-  for(const frames of Object.values(t.actors))for(const entry of new Set(frames))assert.ok(art.grids[entry],'Missing sprite '+entry);
+  for(const cycle of [0,1,2,3]){
+  const t=composeTrack({zone:'forest',running,cycle,card:4,weapon,armor,companion:true},world);
+  for(const frames of Object.values(t.actors))for(const entry of new Set(frames))if(entry)assert.ok(art.grids[entry],'Missing sprite '+entry);
   for(const o of t.objects)for(const f of new Set(o.frames))assert.ok(art.grids[`obj:${o.id}-${f}`],'Missing object '+o.id+'-'+f);
   for(const s of t.segments)for(const layer of ['far','near'])assert.ok(art.bg[s.theme+'-'+layer]);
+  }
  }
  for(const [key,{w,h,d}] of Object.entries(art.grids))assert.equal(d.length,w*h,key);
  for(const item of ['leaf-blade','moss-cloak'])for(const pose of ['walk-0','attack-2','cheer-3','rest-1'])assert.ok(Object.keys(art.grids).some(k=>k.startsWith('eq:'+item)&&k.endsWith(pose)),'Missing gear '+item+' '+pose);

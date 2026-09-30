@@ -4,7 +4,19 @@
 // 冒険中の曲は「ダンジョン1周（1〜10階）」そのもの。1階 = 16拍 = サーバーの1歩（STEP_MS）なので、再生位置がそのまま冒険の進行になる。
 // ブラウザーではここで合成したWAVを1つのHTML Audioでループ再生する（背景再生のため、リアルタイム生成はしない）。
 export const SEGMENT_STEPS = 32; // 16拍 = 1階
-export const FLOORS = 10;
+// イベントカードの山札。1枚 = 16拍。山札は道5・戦闘4（敵1〜3体）・宝箱2をシャッフルし、最初は必ず道、最後に森の守り人。
+// server/game.mjs の deckFor と同じ結果になる（テストで確認）。1束を最後までめくったら、次の束をシャッフルし直す。
+export const DECK_SIZE = 12;
+export const MONSTERS = ['slime','mushling','beetle','wisp'];
+export function deckFor(cycle){
+ const r=rng('forest:deck:'+cycle),cards=['travel','travel','travel','travel','travel','battle','battle','battle','battle','treasure','treasure'];
+ for(let i=cards.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[cards[i],cards[j]]=[cards[j],cards[i]];}
+ const first=cards.indexOf('travel');[cards[0],cards[first]]=[cards[first],cards[0]];
+ // 戦闘カードは1〜3体。種類はスライム・キノコの子・カブトムシ・鬼火から。
+ return [...cards.map(kind=>{if(kind!=='battle')return {kind,foes:0,monsters:[]};const foes=1+Math.floor(r()*3);return {kind,foes,monsters:Array.from({length:foes},()=>MONSTERS[Math.floor(r()*MONSTERS.length)])};}),{kind:'boss',foes:1,monsters:['guardian']}];
+}
+// 山札の何枚目か → 景色の深さ（1〜10）。前半は森の入口、進むほど奥・霧、最後は守り人の広場。
+const depthOf=index=>Math.round(index*9/(DECK_SIZE-1))+1;
 export const MUSIC_RATE = 22050;
 export const HERO_X = 88; // ゆっぴの立ち位置の中心（世界 320×180 の座標）
 export const VIEW_LEFT = 32, VIEW_RIGHT = 288; // 画面に映る範囲（世界の中央 256×144）
@@ -14,7 +26,9 @@ export const SOUND_FRAMES = {
  'hero.walk':[0,2], 'hero.attack':[2], 'hero.cheer':[0,2], 'hero.rest':[0],
  'cat.walk':[1,3], 'cat.pounce':[0], 'slime.bounce':[0], 'guardian.idle':[0],
  'chest.open':[0,1,2,3], 'spark.twinkle':[0,2], 'fire.burn':[0,1,2,3],
- 'frog.croak':[0], 'owl.hoot':[0,2], 'firefly.glow':[0], 'leaves.sway':[0,2]
+ 'frog.croak':[0], 'owl.hoot':[0,2], 'firefly.glow':[0], 'leaves.sway':[0,2],
+ // 仮のモンスター（scripts/monsters.mjs）
+ 'mushling.bounce':[0], 'beetle.bounce':[0,2], 'wisp.bounce':[0]
 };
 
 // 和音は1小節（8コマ = 4拍）ごと。8小節の進行をくり返す。
@@ -22,10 +36,8 @@ const ZONE_SCORES = {
  forest:{bpm:88, chords:[[52,55,59],[48,52,55],[43,47,50],[50,54,57],[52,55,59],[48,52,55],[45,48,52],[47,51,54]]}
 };
 export const ZONE_BPM = Object.fromEntries(Object.entries(ZONE_SCORES).map(([id,z])=>[id,z.bpm]));
-// 1階の長さ（ミリ秒）。server/game.mjs の STEP_MS と一致させる（テストで確認）。
-export const floorMs = zone => Math.round(SEGMENT_STEPS/2*60000/ZONE_BPM[zone]);
-// 階 → 場面。server/game.mjs の eventFor と同じ規則（テストで確認）。
-export const moodForFloor = floor => floor===10?'boss':floor%4===0?'treasure':floor%2===0?'battle':'travel';
+// カード1枚の長さ（ミリ秒）。server/game.mjs の STEP_MS と一致させる（テストで確認）。
+export const cardMs = zone => Math.round(SEGMENT_STEPS/2*60000/ZONE_BPM[zone]);
 
 // 区間ごとの表情。swing は裏拍の位置（0.5 = まっすぐ）、fill は区間最後の4コマの型、breakBar は立ち止まる小節。
 const STYLES = [
@@ -102,33 +114,35 @@ function melody(zone){
  return plan.map((d,beat)=>{const c=ZONE_SCORES[zone].chords[Math.floor(beat/4)%8];return [...c.map(n=>n+12),...c.map(n=>n+24)][d];});
 }
 
-export function trackKey(s){return [s.zone||'forest',s.running===false?'rest':'run',s.running===false?s.floor||1:'',s.weapon||'none',s.armor||'none',levelTier(s.level||1),s.companion?1:0].join('|');}
+export function trackKey(s){return [s.zone||'forest',s.running===false?'rest':'run',s.cycle||0,s.running===false?s.card||0:'',s.weapon||'none',s.armor||'none',levelTier(s.level||1),s.companion?1:0].join('|');}
 
-// 区間の並び。冒険中は 1〜10階、休憩中は焚き火の4区間。道を進む階は、進むたびに表情（スウィング・フィル・ブレイク）を変える。
+// 区間の並び。冒険中は山札1束（12枚）、休憩中は焚き火の4区間。道のカードは、めくるたびに表情（スウィング・フィル・ブレイク）を変える。
 function planFor(state,world){
  let walked=0;
- const floors=state.running===false?Array.from({length:4},()=>({floor:state.floor||1,mood:'rest'})):Array.from({length:FLOORS},(_,i)=>({floor:i+1,mood:moodForFloor(i+1)}));
- return floors.map((seg,k)=>{const style=STYLES[(seg.mood==='travel'?walked++:k)%4];return {...seg,index:k,start:k*SEGMENT_STEPS,theme:themeFor(world,seg.floor,seg.mood),style:seg.mood==='travel'||seg.mood==='rest'?style:{...style,breakBar:null}};});
+ const resting=state.running===false,card=state.card||0;
+ const cards=resting?Array.from({length:4},()=>({kind:'rest',foes:0,monsters:[],card,depth:depthOf(card)})):deckFor(state.cycle||0).map((c,i)=>({...c,card:i,depth:depthOf(i)}));
+ return cards.map((c,k)=>{const mood=c.kind,style=STYLES[(mood==='travel'?walked++:k)%4];return {mood,foes:c.foes,monsters:c.monsters||[],card:c.card,index:k,start:k*SEGMENT_STEPS,theme:themeFor(world,c.depth,mood),style:mood==='travel'||mood==='rest'?style:{...style,breakBar:null}};});
 }
 const breakAt=(plan,s)=>{const seg=plan[Math.floor(s/SEGMENT_STEPS)];return seg.style.breakBar===Math.floor(s%SEGMENT_STEPS/8);};
-// 歩いているコマ（道の階で、ブレイクの小節以外）と、その累計。
+// 歩いているコマ（道のカードで、ブレイクの小節以外）と、その累計。
 function walkOf(plan){
  const steps=plan.length*SEGMENT_STEPS,moving=Array.from({length:steps},(_,s)=>plan[Math.floor(s/SEGMENT_STEPS)].mood==='travel'&&!breakAt(plan,s)),moved=[0];
  for(let s=0;s<steps;s++)moved.push(moved[s]+(moving[s]?1:0));
  return {moving,moved};
 }
 
-// エリア = 1枚の長いスクロール絵 = 楽譜。3つの段それぞれに、ダンジョン1周で進む長さの帯があり、そこに物が並ぶ。
-// 物の景色（森の入口・森の奥…）は「その物が画面の右端から現れる時の階」で決まるので、景色は切れ目なく移り変わる。
-// 門は、道の階が始まる瞬間にゆっぴの真上を通る位置に置く。帯の端は先頭へつながり、1周してもそのまま続く。
-export function layoutArea(world,zone='forest'){
- const plan=planFor({zone,running:true},world),{moved}=walkOf(plan),total=moved[moved.length-1],steps=plan.length*SEGMENT_STEPS;
- const r=rng(zone+':area'),lanes={};
+// 山札1束ぶんの景色 = 1枚の長いスクロール絵。3つの段それぞれに、その束で歩く長さの帯があり、そこに物が並ぶ。
+// 物の景色（森の入口・森の奥…）は「その物が画面の右端から現れる時のカード」で決まるので、景色は切れ目なく移り変わる。
+// 門は、道のカードが続く境目でゆっぴの真上を通る位置に置く。帯の端は先頭へつながる。
+export function layoutArea(world,zone='forest',cycle=0){
+ const plan=planFor({zone,running:true,cycle},world),{moved}=walkOf(plan),total=Math.max(1,moved[moved.length-1]),steps=plan.length*SEGMENT_STEPS;
+ const r=rng(zone+':area:'+cycle),lanes={};
  for(const [lane,spec] of Object.entries(world.LANES)){
   const pxPerStep=spec.pxPerBeat/2,period=total*pxPerStep,items=[];
   const themeAt=x=>{const m=((x-VIEW_RIGHT)/pxPerStep%total+total)%total,s=Math.min(steps-1,moved.findIndex(v=>v>=m));return plan[Math.floor(Math.max(0,s)/SEGMENT_STEPS)].theme;};
   const arch=world.OBJECTS.arch;
-  if(lane==='near'&&arch)for(const seg of plan)if(seg.mood==='travel')items.push({id:'arch',x:HERO_X-arch.width/2+moved[seg.start]*pxPerStep});
+  // 門は、道から道へ歩き続けるカードの境目だけ（立ち止まるカードの間は、ゆっぴの上に門が居座らないように）。
+  if(lane==='near'&&arch)for(const seg of plan)if(seg.mood==='travel'&&seg.index>0&&plan[seg.index-1].mood==='travel')items.push({id:'arch',x:HERO_X-arch.width/2+moved[seg.start]*pxPerStep});
   const clear=(x,w)=>items.every(i=>{const o=world.OBJECTS[i.id];return [-period,0,period].every(p=>x+w+8<=i.x+p||x>=i.x+p+o.width+8);});
   let x=r()*48;
   while(x<period-16){
@@ -142,12 +156,12 @@ export function layoutArea(world,zone='forest'){
   items.sort((a,b)=>a.x-b.x);
   lanes[lane]={pxPerStep,period,objects:items};
  }
- return {zone,bpm:ZONE_SCORES[zone].bpm,floors:plan.map(({floor,mood,theme})=>({floor,mood,theme})),floorStart:plan.map(seg=>moved[seg.start]),walk:total,lanes};
+ return {zone,cycle,cards:plan.map(({mood,foes,theme})=>({mood,foes,theme})),cardStart:plan.map(seg=>moved[seg.start]),walk:total,lanes};
 }
 
-// state: {zone, running, floor, weapon, armor, level, companion}
-// world: scripts/forest-objects.mjs の {LANES, THEMES, OBJECTS}。area: layoutArea の結果（areas/forest.json）。
-export function composeTrack(state,world=null,area=world?layoutArea(world,state.zone||'forest'):null){
+// state: {zone, running, cycle, card, weapon, armor, level, companion}
+// world: scripts/forest-objects.mjs の {LANES, THEMES, OBJECTS}。area: その束の景色（layoutArea）。
+export function composeTrack(state,world=null,area=world?layoutArea(world,state.zone||'forest',state.cycle||0):null){
  const zone=ZONE_SCORES[state.zone]?state.zone:'forest',score=ZONE_SCORES[zone],tier=levelTier(state.level||1),running=state.running!==false;
  const weapon=WEAPON_VOICE[state.weapon]?state.weapon:'none',armor=ARMOR_FX[state.armor]?state.armor:'none';
  const plan=planFor(state,world),steps=plan.length*SEGMENT_STEPS,beat=60/score.bpm,prev=s=>(s+steps-1)%steps;
@@ -169,7 +183,11 @@ export function composeTrack(state,world=null,area=world?layoutArea(world,state.
   'hero.rest':s=>note(s,voice,melodyAt(s),.24,'hero',.9),
   'cat.walk':s=>note(s,'tick',null,.16),
   'cat.pounce':s=>note(s,'kick',48,.5),
-  'slime.bounce':s=>note(s,'boing',chordAt(s)[0]-12,.46),
+  // 複数の敵は、それぞれ和音の別の音でベースを弾く（1体目: 根音、2体目: 5度、3体目: 3度）。
+  'slime.bounce':(s,k=0)=>note(s,'boing',chordAt(s)[[0,2,1][k]]-12,.46-.08*k),
+  'mushling.bounce':(s,k=0)=>note(s,'pop',chordAt(s)[[0,2,1][k]]+12,.3-.05*k),
+  'beetle.bounce':(s,k=0)=>note(s,'wood',chordAt(s)[[0,2,1][k]]+12,.26-.04*k),
+  'wisp.bounce':(s,k=0)=>note(s,'glass',chordAt(s)[[2,0,1][k]]+24,.16-.03*k),
   'guardian.idle':s=>{note(s,'boom',chordAt(s)[0]-12,.6);note(s,'kick',40,.5);},
   'chest.open':s=>note(s,'chime',chordAt(s)[s%3]+24+(s%4===3?12:0),.16),
   'spark.twinkle':s=>note(s,'chime',chordAt(s)[(s>>1)%3]+36,.12),
@@ -191,14 +209,18 @@ export function composeTrack(state,world=null,area=world?layoutArea(world,state.
  const heroFrame=s=>+hero[s].split('-')[2],fighting=s=>['battle','boss'].includes(segAt(s).mood);
  const cast={hero};
  if(state.companion)cast.cat=Array.from({length:steps},(_,s)=>partyEntry('cat',CAT_ACTION,a=>a==='walk'?'catwalk':a)(s));
- // 敵は階の頭で右から滑り込む（最初の4コマは跳ねずに近づくので鳴らない）。斬撃が当たったコマ（attack-2）と次のコマでひるむ。
- cast.foe=Array.from({length:steps},(_,s)=>{
-  const [sprite,action]=FOE[segAt(s).mood];
-  if(sprite!=='spark'&&sprite!=='fire'&&local(s)<4)return `${sprite}-${action}-${[1,2,1,2][local(s)]}`;
-  if(fighting(s)&&heroFrame(s)===2)return `${sprite}-hit-0`;
-  if(fighting(s)&&heroFrame(s)===3&&heroFrame(prev(s))===2)return `${sprite}-hit-1`;
+ // 敵はカードの頭で右から順に滑り込む（近づく間は跳ねずに鳴らない）。複数の敵は跳ねる拍をずらして掛け合う
+ // （1体目: 表拍、2体目: 拍の裏、3体目: 8分遅れ）。ゆっぴの斬撃は1体ずつ順に当たり、当たった敵だけがひるむ。
+ const heroHits=s=>fighting(s)&&heroFrame(s)===2,attackNo=s=>{let n=0;for(let k=segAt(s).start;k<s;k++)if(heroHits(k)&&!heroHits(k-1))n++;return n;};
+ for(let k=0;k<3;k++)cast['foe'+k]=Array.from({length:steps},(_,s)=>{
+  const seg=segAt(s),count=seg.mood==='battle'?seg.foes:1,[sprite,action]=seg.mood==='battle'?[seg.monsters[k]??'slime','bounce']:FOE[seg.mood];
+  if(k>=count)return '';
+  const offset=[0,2,1][k];
+  if(sprite!=='spark'&&sprite!=='fire'&&local(s)<4+k*2)return `${sprite}-${action}-${[1,2][local(s)%2]}`;
+  if(fighting(s)&&heroFrame(s)===2&&attackNo(s)%count===k)return `${sprite}-hit-0`;
+  if(fighting(s)&&heroFrame(s)===3&&heroFrame(prev(s))===2&&attackNo(prev(s))%count===k)return `${sprite}-hit-1`;
   if(sprite==='spark'&&(s>>3)%4<2)return `${sprite}-${action}-3`;
-  return `${sprite}-${action}-${s%4}`;
+  return `${sprite}-${action}-${(s+4-offset)%4}`;
  });
  // 森の生き物は小節ごとに鳴く・休むを切り替える。
  // 鳴かない間も、待機の動き（idle: 揺れる・呼吸・浮かぶ。音の出ないコマだけ）で拍に乗り続ける。
@@ -209,19 +231,20 @@ export function composeTrack(state,world=null,area=world?layoutArea(world,state.
  cast.owl=ambient('owl','hoot',1,(m,bar,s)=>calm(m)&&bar===3||m==='rest'&&bar===1&&segAt(s).index%2===1);
  cast.firefly=ambient('firefly','glow',3,(m,bar)=>m==='rest'||m==='treasure'||m==='travel'&&bar%2===0);
  cast.leaves=ambient('leaves','sway',1,(m,bar,s)=>m!=='rest'&&!inBreak(s));
- // コマの切り替わりで、音が鳴るコマに入った瞬間だけ鳴らす。
- for(const frames of Object.values(cast))frames.forEach((entry,s)=>{
+ // コマの切り替わりで、音が鳴るコマに入った瞬間だけ鳴らす（いない役者 '' は鳴らない）。
+ for(const [id,frames] of Object.entries(cast))frames.forEach((entry,s)=>{
+  if(!entry)return;
   const [sprite,action,frame]=entry.split('-'),key=sprite+'.'+action;
-  if(SOUND_FRAMES[key]?.includes(+frame)&&entry!==frames[prev(s)])sounds[key](s);
+  if(SOUND_FRAMES[key]?.includes(+frame)&&entry!==frames[prev(s)])sounds[key](s,+(id.match(/^foe(\d)$/)?.[1]??0));
  });
  const {moving,moved}=running?walkOf(plan):{moving:Array(steps).fill(false),moved:Array(steps+1).fill(0)};
- // 休憩中は、その階の入口で立ち止まった景色のまま。
- const scrollBase=running||!area?0:area.floorStart[Math.max(0,Math.min(FLOORS-1,(state.floor||1)-1))];
+ // 休憩中は、いまのカードの入口で立ち止まった景色のまま。
+ const scrollBase=running||!area?0:area.cardStart[Math.max(0,Math.min(DECK_SIZE-1,state.card||0))];
  const objects=world&&area?sceneObjects(world,area,moved,scrollBase,steps,note,chordAt):[];
  // 夜風（背景の空気）。小節の頭で和音がゆっくり息をする。
  for(let s=0;s<steps;s+=8)chordAt(s).forEach(n=>note(s,'pad',n+12,segAt(s).mood==='rest'||inBreak(s)?.05:.035,'main',2.2));
  return {key:trackKey({...state,zone,weapon,armor}),zone,bpm:score.bpm,running,
-  segments:plan.map(({floor,mood,theme,start})=>({floor,mood,theme,start})),steps,stepTimes,duration:stepTimes[steps],moving,scrollBase,notes,actors:cast,objects,fx};
+  cycle:state.cycle||0,segments:plan.map(({card,mood,foes,monsters,theme,start})=>({card,mood,foes,monsters,theme,start})),steps,stepTimes,duration:stepTimes[steps],moving,scrollBase,notes,actors:cast,objects,fx};
 }
 
 // エリアの帯から、この曲で画面に映る物を取り出し、各コマの動きと音を決める。
@@ -299,9 +322,9 @@ export function stepAt(track,seconds){
  let lo=0,hi=track.steps-1;while(lo<hi){const mid=(lo+hi+1)>>1;if(times[mid]<=t)lo=mid;else hi=mid-1;}
  return {step:lo,fraction:(t-times[lo])/(times[lo+1]-times[lo])};
 }
-// 冒険の進み具合（階と、その階の経過割合）→ 曲の再生位置（秒）。
-export function secondsForFloor(track,floor,fraction){
- const seg=track.running?Math.max(0,Math.min(FLOORS-1,floor-1)):0;
+// 冒険の進み具合（山札の何枚目か、そのカードの経過割合）→ 曲の再生位置（秒）。
+export function secondsForCard(track,card,fraction){
+ const seg=track.running?Math.max(0,Math.min(DECK_SIZE-1,card)):0;
  return (seg+Math.max(0,Math.min(.999,fraction)))*track.duration/track.segments.length;
 }
 
