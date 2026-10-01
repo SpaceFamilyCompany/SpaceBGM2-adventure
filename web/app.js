@@ -89,7 +89,7 @@ const player={
  align(){
   const t=this.track,a=this.audio;if(!t?.running||a.paused||a.readyState<1)return;
   const want=this.target(),diff=Math.abs(((a.currentTime-want)%t.duration+t.duration*1.5)%t.duration-t.duration/2);
-  if(diff>.4)a.currentTime=want;
+  if(diff>1)a.currentTime=want;
  },
  async toggle(forcePlay=false){
   const a=this.audio;
@@ -116,13 +116,18 @@ metadata(seg){
 };
 
 // なめらかな時計。音声の再生位置は端末によって飛び飛びにしか進まないので、
-// 最後に分かった位置から performance.now() で補って毎フレーム進め、実際の位置と 60ms 以上ずれたら合わせ直す。
+// 最後に分かった位置から performance.now() で補って毎フレーム進める。iPhone の再生位置や通信の時刻はぶれるので、
+// 小さなずれは毎フレーム少しずつ寄せ（絵が跳ねない）、0.25 秒をこえた時だけ合わせ直す。
 const smooth={
  base:0,at:0,duration:0,
  now(seconds,duration){
-  const t=performance.now(),predicted=this.base+(t-this.at)/1000;
-  if(duration!==this.duration||Math.abs(predicted-seconds)>.06){this.base=seconds;this.at=t;this.duration=duration;return seconds;}
-  return predicted%duration;
+  const t=performance.now();
+  if(duration!==this.duration){this.base=seconds;this.at=t;this.duration=duration;return seconds;}
+  const predicted=(this.base+(t-this.at)/1000)%duration;
+  let err=seconds-predicted;if(err>duration/2)err-=duration;else if(err<-duration/2)err+=duration;
+  if(Math.abs(err)>.25){this.base=seconds;this.at=t;return seconds;}
+  this.base=predicted+err*.05;this.at=t;
+  return this.base;
  }
 };
 
@@ -131,7 +136,7 @@ const smooth={
 let VIEW_TOP=0;
 function layoutStage(){
  const screen=document.querySelector('.screen'),wrap=document.querySelector('.stage-wrap'),c=$('stage');
- const status=$('statusWindow'),others=[...screen.children].filter(el=>el!==wrap&&el!==status&&!el.hidden).reduce((a,el)=>a+el.offsetHeight+8,0);
+ const status=$('statusWindow'),others=[...screen.children].filter(el=>el!==wrap&&el!==status&&el.id!=='choice'&&!el.hidden).reduce((a,el)=>a+el.offsetHeight+8,0);
  const availW=screen.clientWidth-16,availH=screen.clientHeight-16-others-(status.hidden?0:96);if(availW<=0||availH<=0)return;
  const H=Math.max(180,Math.min(230,Math.round(256*availH/availW)));
  if(c.height!==H){c.height=H;stage.snap.height=H;stage.ctx.imageSmoothingEnabled=false;stage.dirty=true;VIEW_TOP=180-H;}
@@ -277,8 +282,9 @@ function loop(){
 }
 
 function showError(text){$('error').textContent=text;$('error').hidden=false;}
+let laidOut=false;
 function render(){
- layoutStage();
+ if(!laidOut){laidOut=true;layoutStage();}
  if(!snapshot)return;
  const g=snapshot.game,catalog=snapshot.equipmentCatalog;
  wardrobe(g,catalog);
@@ -352,14 +358,20 @@ function journey(g){
   $('partyIcons').replaceChildren(...party.map(id=>{const li=document.createElement('li'),c=document.createElement('canvas'),src=sprites.get(pose[id]);c.width=32;c.height=32;if(src)c.getContext('2d').drawImage(src,0,0);const name=document.createElement('span');name.textContent=id==='hero'?'ゆっぴ':COMPANION_NAMES[id]||id;li.append(c,name);return li;}));}
 }
 let partyKey='';
+// サーバーとの時刻差。通信の遅れは毎回ちがうので、往復の真ん中で測り、1秒未満の変化は少しずつ寄せる（絵が跳ねない）。
+let offsetKnown=false;
+function syncOffset(serverNow,sent){
+ const est=serverNow-(sent+Date.now())/2;
+ if(!offsetKnown||Math.abs(est-offset)>1000){offset=est;offsetKnown=true;}else offset+=(est-offset)*.1;
+}
 function saved(state,text){$('saveStatus').dataset.state=state;$('saveStatus').textContent=text;}
 async function load(){
  if(loading||busy||document.hidden)return;
  loading=true;
  try{
-  const r=await fetch('api/game',{cache:'no-store'}),d=await r.json();
+  const sent=Date.now(),r=await fetch('api/game',{cache:'no-store'}),d=await r.json();
   if(!r.ok)throw new Error(d.error||'冒険の記録を読み込めませんでした。');
-  offset=d.serverNow-Date.now();snapshot=d;render();player.align();
+  syncOffset(d.serverNow,sent);snapshot=d;render();player.align();
   $('error').hidden=true;saved('ok','保存済み');
  }catch(e){saved('error','接続を確認中');showError(e.message);}
  finally{loading=false;}
@@ -368,9 +380,9 @@ async function command(action){
  if(busy||!snapshot)return;
  busy=true;render();
  try{
-  const r=await fetch('api/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action)}),d=await r.json();
+  const sent=Date.now(),r=await fetch('api/game',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action)}),d=await r.json();
   if(!r.ok)throw new Error(d.error||'操作できませんでした。');
-  offset=d.serverNow-Date.now();snapshot=d;$('error').hidden=true;saved('ok','保存済み');
+  syncOffset(d.serverNow,sent);snapshot=d;$('error').hidden=true;saved('ok','保存済み');
  }catch(e){showError(e.message);}
  finally{busy=false;render();}
 }

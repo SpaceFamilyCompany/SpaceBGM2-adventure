@@ -28,7 +28,7 @@ button,input{font:inherit;color:inherit}
 .game{position:relative;display:flex;flex-direction:column;height:100%;max-width:960px;margin:0 auto;padding-top:env(safe-area-inset-top,0px)}
 
 /* ゲーム画面: 舞台は 256×180 のドット絵。空いた高さに合わせて、縦横比を保ったまま最大まで大きくする */
-.screen{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-start;gap:8px;padding:8px}
+.screen{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-start;gap:8px;padding:8px}
 .stage-wrap{position:relative;align-self:center;width:100%;max-width:100%;border:2px solid var(--line);border-radius:4px;overflow:hidden;background:var(--ink)}
 .stage{display:block;width:100%;height:auto;image-rendering:pixelated;touch-action:manipulation;cursor:pointer}
 .hud{position:absolute;inset:0 0 auto 0;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 10px;pointer-events:none}
@@ -53,12 +53,13 @@ button,input{font:inherit;color:inherit}
 .songbar i{display:block;height:100%;width:0;background:var(--glow)}
 
 /* メッセージウィンドウ（語り・場面の一文） */
-.message{align-self:center;width:min(100%,640px);padding:10px 14px;min-height:64px}
+.message{position:relative;flex:none;align-self:center;width:min(100%,640px);padding:10px 14px;height:76px;overflow:hidden}
 .scene-text{margin:0;font-family:var(--dot);font-size:16px;line-height:1.6;letter-spacing:.04em;text-wrap:balance}
-.error{margin:6px 0 0;font-size:13px;color:var(--blossom)}
+.error{position:absolute;left:14px;right:14px;bottom:4px;margin:0;font-size:12px;line-height:1.4;color:var(--blossom);background:var(--ink)}
 
 /* 試練の選択肢ウィンドウ。選んだほうに ▶ が付く */
-.choice{align-self:center;width:min(100%,640px);display:flex;flex-direction:column;gap:6px;padding:10px 14px}
+/* 舞台の大きさを変えないよう、メッセージの上に重ねて出す */
+.choice{position:absolute;left:8px;right:8px;bottom:92px;z-index:3;margin:0 auto;max-width:640px;display:flex;flex-direction:column;gap:6px;padding:10px 14px}
 .choice-title{margin:0;font-family:var(--dot);font-size:13px;letter-spacing:.12em;color:var(--glow)}
 .choice-options{display:flex;flex-wrap:wrap;gap:4px 16px}
 .choice-options button{min-height:40px;padding:0 4px 0 18px;border:0;background:none;font-family:var(--dot);font-size:16px;cursor:pointer;position:relative}
