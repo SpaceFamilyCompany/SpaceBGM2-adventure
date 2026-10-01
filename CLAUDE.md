@@ -30,7 +30,7 @@ node scripts/sprite-preview.mjs      # dist/sprite-preview.html
 | ファイル | 役割 |
 |---|---|
 | web/score.mjs | 楽譜エンジン（コマ・音符・スクロール・背景オブジェクト配置・合成・WAV）。画面と Worker の両方で同じソースを使う |
-| web/page.html / app.css / app.js | 舞台（Canvas。320×180 の世界の中央 256×144 を描く。ドット絵は起動時に1度だけ画像化し、変化した時だけ描き直す）・イベントカードの列・操作・再生 |
+| web/page.html / app.css / app.js | 画面は上から 状態帯・舞台・語り帯・音を集める場所（再生前は大きな再生、再生中はレーン＋タップ、試練は2択）・コマンド4つ。舞台（Canvas。320×180 の世界の中央 256×152 を描く。ドット絵は起動時に1度だけ画像化し、変化した時だけ描き直す）・イベントカードの列・操作・再生 |
 | scripts/pixel-art.mjs | キャラ・森の生き物・装備の着せ替えパーツ（Codex 制作。32×32、1コマ=8分音符） |
 | scripts/creature-motion.mjs | フクロウ・カエル・蛍の鳴く動きと、音の出ない待機（idle）の動き（pixel-art から組み立て） |
 | scripts/monsters.mjs | 仮のモンスター（キノコの子・カブトムシ・鬼火。Claude 作、Codex の本番版に差し替え予定） |

@@ -103,9 +103,11 @@ const player={
  },
  sync(){
   const playing=!this.audio.paused,waiting=!this.track||(this.wanted!==this.track.key&&!playing);
-  $('play').disabled=!this.track;
+  $('play').disabled=!this.track;$('bigPlay').disabled=!this.track;
   $('play').setAttribute('aria-pressed',String(playing));
-  $('playLabel').textContent=!this.track?'準備中':playing?'止める':'再生';
+  $('playLabel').textContent=!this.track?'準備中':playing?'一時停止':'再生';
+  $('bigPlayLabel').textContent=!this.track?'準備中…':'再生';
+  field.update();
   if('mediaSession' in navigator)navigator.mediaSession.playbackState=playing?'playing':'paused';
   document.body.dataset.waiting=String(waiting);
  },
@@ -131,21 +133,8 @@ const smooth={
  }
 };
 
-// ドット絵は起動時に1度だけ小さな画像にしておき、毎回は貼るだけ。
-// 舞台は世界（320×180）の横の中央 256 を描く。縦長の画面では空を上に伸ばし、残りの高さいっぱいに広げる（世界は下にそろえる）。
-let VIEW_TOP=0;
-function layoutStage(){
- const screen=document.querySelector('.screen'),wrap=document.querySelector('.stage-wrap'),c=$('stage');
- const status=$('statusWindow'),others=[...screen.children].filter(el=>el!==wrap&&el!==status&&el.id!=='choice'&&!el.hidden).reduce((a,el)=>a+el.offsetHeight+8,0);
- const availW=screen.clientWidth-16,availH=screen.clientHeight-16-others-(status.hidden?0:96);if(availW<=0||availH<=0)return;
- const H=Math.max(180,Math.min(230,Math.round(256*availH/availW)));
- if(c.height!==H){c.height=H;stage.snap.height=H;stage.ctx.imageSmoothingEnabled=false;stage.dirty=true;VIEW_TOP=180-H;}
- wrap.style.width=Math.floor(Math.min(availW,availH*256/H))+'px';
- // 舞台と他のウィンドウを置いて残った高さが狭ければ、ステータスウィンドウを隠す（スクロールさせない）
- const left=screen.clientHeight-16-others-wrap.offsetHeight-8;status.hidden=left<88;
- // 仲間の姿は、空いた高さに合わせて大きく（32ドットの整数倍に近い大きさで）
- status.style.setProperty('--icon',Math.max(40,Math.min(112,Math.floor((left-110)/32)*32))+'px');
-}
+// ドット絵は起動時に1度だけ小さな画像にしておき、毎回は貼るだけ。舞台は世界（320×180）の中央 256×152 を描く。
+const VIEW_TOP=28; // 世界の上 28 ドット（空）は描かない。キャラと地面を大きく見せる
 const sprites={
  cache:new Map(),bg:new Map(),
  rgba:Object.fromEntries(Object.entries(ART.palette).map(([ch,hex])=>[ch,[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)]])),
@@ -202,9 +191,8 @@ const stage={
   if(t.kind==='prologue'){const line=PROLOGUE_LINES[scene.index*4+Math.min(3,Math.floor((scene.step-scene.seg.start)/TURN_STEPS))];if($('sceneText').textContent!==line)$('sceneText').textContent=line;}
   const now=performance.now(),themeA=this.themeFade?Math.min(1,(now-this.themeFade.start)/1200):1,swapA=this.swap?Math.min(1,(now-this.swap.start)/500):1;
   rhythm.update(t,seconds);
-  const ring=rhythm.ring(t,scene,seconds),label=rhythm.label();
-  if($('rhythmLabel').textContent!==label)$('rhythmLabel').textContent=label;
-  const sig=(ring?ring.x+','+ring.y+','+ring.r+'|':'')+scene.items.map(i=>i.kind==='bg'?i.layer+Math.round(i.offset):i.kind==='aura'?'aura'+i.r+i.alpha.toFixed(2):i.key+i.x+','+i.y).join('|')+'|'+scene.shake+'|'+themeA.toFixed(2)+'|'+swapA.toFixed(2);
+  const ring=rhythm.ring(t,scene,seconds);
+  const sig=(ring?ring.x+','+ring.top+','+ring.on+'|':'')+scene.items.map(i=>i.kind==='bg'?i.layer+Math.round(i.offset):i.kind==='aura'?'aura'+i.r+i.alpha.toFixed(2):i.key+i.x+','+i.y).join('|')+'|'+scene.shake+'|'+themeA.toFixed(2)+'|'+swapA.toFixed(2);
   if(sig===this.last&&!this.dirty)return;
   this.last=sig;this.dirty=false;
   const ctx=this.ctx;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,256,ctx.canvas.height);
@@ -219,7 +207,8 @@ const stage={
    const c=sprites.get(item.key);if(c)ctx.drawImage(c,item.x-VIEW_LEFT,item.y-VIEW_TOP);
   }
   ctx.setTransform(1,0,0,1,0,0);
-  if(ring){ctx.strokeStyle='#A9DDE2';ctx.lineWidth=1;ctx.beginPath();ctx.arc(ring.x-VIEW_LEFT,ring.y-VIEW_TOP,Math.max(4,ring.r),0,Math.PI*2);ctx.stroke();if(ring.r<=6){ctx.fillStyle='#F0A9B9';ctx.fillRect(ring.x-VIEW_LEFT-1,ring.y-37,3,3);}}
+  // ねらいの物の頭の上に小さな ▼（鳴る瞬間だけピンク）
+  if(ring){const x=ring.x-VIEW_LEFT,y=ring.top-VIEW_TOP-6;ctx.fillStyle=ring.on?'#F0A9B9':'#A9DDE2';ctx.fillRect(x-3,y,7,2);ctx.fillRect(x-2,y+2,5,1);ctx.fillRect(x-1,y+3,3,1);ctx.fillRect(x,y+4,1,1);}
   if(themeA>=1)this.themeFade=null;
   if(this.swap){ctx.globalAlpha=1-swapA;ctx.drawImage(this.snap,0,0);ctx.globalAlpha=1;if(swapA>=1)this.swap=null;}
  }
@@ -254,13 +243,13 @@ const rhythm={
  },
  tap(){
   const t=player.visual();if(!t||!this.target)return;
-  if(player.audio.paused){this.say('再生すると、世界の音を集められる');return;}
+  if(player.audio.paused)return;
   const now=smooth.now(player.clock(),t.duration),near=this.upcoming(t,now-.2,this.target,.4).map(e=>({...e,dt:Math.abs(e.dt-.2)})).sort((a,b)=>a.dt-b.dt)[0];
   const id=near&&near.src+':'+near.step;
-  if(!near||near.dt>.12||id===this.lastEvent){this.hits=0;this.say('はずれ。もう一度、音に合わせて');return;}
+  if(!near||near.dt>.12||id===this.lastEvent){this.hits=0;this.say('はずれ');return;}
   this.lastEvent=id;this.hits++;
-  this.say((near.dt<=.06?'ぴったり！':'いいね！')+'　'+this.hits+'/'+this.needed);
-  if(this.hits>=this.needed){const src=this.target;this.collected.add(src);this.target=null;this.hits=0;this.say('歌の書に「'+SOUND_NAMES[src]+'」');command({type:'collect',src});}
+  this.say(near.dt<=.06?'ぴったり！':'いいね！');lane.flash=performance.now();
+  if(this.hits>=this.needed){const src=this.target;this.collected.add(src);this.target=null;this.hits=0;this.say('歌の書に「'+SOUND_NAMES[src]+'」が記された');command({type:'collect',src});}
  },
  // ねらいの物の上のリング。鳴る瞬間へ向けて縮んでいく（1拍前から）。
  ring(track,scene,now){
@@ -268,7 +257,8 @@ const rhythm={
   const item=scene.items.filter(i=>i.kind==='sprite'&&(i.key.startsWith(this.target+'-')||i.key.startsWith('obj:'+this.target+'-'))).sort((a,b)=>Math.abs(a.x-160)-Math.abs(b.x-160))[0];
   if(!item)return null;
   const c=sprites.get(item.key),beat=2*(track.duration/track.steps),next=this.upcoming(track,now,this.target,beat)[0];
-  return {x:item.x+(c?.width??32)/2,y:item.y+(c?.height??32)/2,r:next?Math.round(5+18*Math.max(0,next.dt)/beat):0};
+  this.iconKey=item.key;
+  return {x:item.x+Math.floor((c?.width??32)/2),top:item.y,on:!!next&&next.dt<.12};
  }
 };
 
@@ -278,22 +268,75 @@ function loop(){
  const t=player.visual();if(!t)return;
  stage.setTrack(t);
  player.tick();
- stage.draw(smooth.now(player.clock(),t.duration));
+  const now=smooth.now(player.clock(),t.duration);
+ stage.draw(now);
+ lane.draw(t,now);
 }
 
+// 音を集める場所: 再生前は大きな再生、再生中はねらいの音・レーン・タップ、試練の間は2択（choicePanel）。
+const field={
+ icon:undefined,
+ update(){
+  const playing=!player.audio.paused,trial=!$('choice').hidden;
+  $('bigPlay').hidden=playing||trial;$('collect').hidden=!playing||trial;
+ },
+ // ねらいの音の名前・絵・進み（●●○）・判定
+ show(){
+  const target=rhythm.target,name=target?SOUND_NAMES[target]:'耳をすませている…';
+  // ねらいの音がない間（プロローグ・集め終えた時）は、レーンとタップを隠して聴くだけにする
+  if($('collect').dataset.idle!==String(!target)){$('collect').dataset.idle=String(!target);}
+  if($('targetName').textContent!==name)$('targetName').textContent=name;
+  const dots=target?'●'.repeat(rhythm.hits)+'○'.repeat(rhythm.needed-rhythm.hits):'';
+  if($('targetDots').textContent!==dots)$('targetDots').textContent=dots;
+  const judge=performance.now()<rhythm.messageUntil?rhythm.message:'';
+  if($('judge').textContent!==judge)$('judge').textContent=judge;
+  const icon=target?rhythm.iconKey??null:null;
+  if(icon!==this.icon){this.icon=icon;const c=$('targetIcon').getContext('2d');c.clearRect(0,0,32,32);const src=icon&&sprites.get(icon);if(src)c.drawImage(src,Math.floor((32-src.width)/2),Math.floor((32-src.height)/2));}
+ }
+};
+// レーン（太鼓のように）: ねらいの音が鳴る時刻に、その物の絵が右から流れてきて、左の円に重なった瞬間にタップ。
+const lane={
+ flash:0,
+ draw(track,now){
+  if($('collect').hidden)return;
+  field.show();
+  const c=$('lane'),dpr=Math.min(3,window.devicePixelRatio||1),w=Math.round(c.clientWidth*dpr),h=Math.round(c.clientHeight*dpr);
+  if(!w||!h)return;
+  if(c.width!==w||c.height!==h){c.width=w;c.height=h;}
+  const ctx=c.getContext('2d');ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,w,h);
+  const r=h*.36,jx=h*.55,cy=h/2,beat=2*(track.duration/track.steps),span=beat*4;
+  // 拍の目盛り（流れる）
+  ctx.fillStyle='#3B3470';
+  for(let b=Math.ceil(now/beat);b*beat<now+span;b++){const x=jx+(b*beat-now)/span*(w-jx);ctx.fillRect(Math.round(x),cy-h*.18,Math.max(1,dpr),h*.36);}
+  // 判定の円
+  const hit=performance.now()-this.flash<160;
+  ctx.lineWidth=2*dpr;ctx.strokeStyle=hit?'#F0A9B9':'#A9DDE2';ctx.beginPath();ctx.arc(jx,cy,r,0,Math.PI*2);ctx.stroke();
+  if(hit){ctx.fillStyle='rgba(240,169,185,.35)';ctx.fill();}
+  // 流れてくる音（ねらいの物の絵）
+  if(!rhythm.target)return;
+  const icon=rhythm.iconKey&&sprites.get(rhythm.iconKey),size=Math.max(32,Math.floor(r*2/32)*32);
+  for(const e of rhythm.upcoming(track,now,rhythm.target,span)){
+   if(e.dt<-.15)continue;
+   const x=jx+e.dt/span*(w-jx);
+   ctx.globalAlpha=e.dt<0?.4:1;
+   if(icon)ctx.drawImage(icon,Math.round(x-size/2),Math.round(cy-size/2),size,size);
+   else{ctx.fillStyle='#F0A9B9';ctx.beginPath();ctx.arc(x,cy,r*.5,0,Math.PI*2);ctx.fill();}
+   ctx.globalAlpha=1;
+  }
+ }
+};
+
 function showError(text){$('error').textContent=text;$('error').hidden=false;}
-let laidOut=false;
 function render(){
- if(!laidOut){laidOut=true;layoutStage();}
  if(!snapshot)return;
  const g=snapshot.game,catalog=snapshot.equipmentCatalog;
  wardrobe(g,catalog);
  choicePanel(g);
  healingPanel(g);
  journey(g);
- $('rest').textContent=g.running?'休む':'冒険を再開';
+ $('rest').textContent=g.running?'冒険中':'休憩中';$('rest').setAttribute('aria-checked',String(!!g.running));$('rest').title=g.running?'押すと焚き火で休む':'押すと冒険を再開';
  $('rest').disabled=busy;
- $('logs').replaceChildren(...g.logs.slice(0,4).map(l=>{const li=document.createElement('li'),time=document.createElement('time'),text=document.createElement('span');time.textContent=new Date(l.at).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tokyo'});text.textContent=l.text;li.append(time,text);return li;}));
+ $('logs').replaceChildren(...g.logs.slice(0,6).map(l=>{const li=document.createElement('li'),time=document.createElement('time'),text=document.createElement('span');time.textContent=new Date(l.at).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tokyo'});text.textContent=l.text;li.append(time,text);return li;}));
  stage.setGear(g);
  player.want(g);
 }
@@ -317,7 +360,7 @@ function wardrobe(g,catalog){
 let choiceKey='';
 function choicePanel(g){
  const card=snapshot.card,trial=TRIALS[card?.kind],open=!!trial&&g.running&&!(g.prologue>0);
- $('choice').hidden=!open;
+ $('choice').hidden=!open;field.update();
  const picked=open?(g.choices?.[g.cycle+':'+g.card]??null):null,key=JSON.stringify([open,g.cycle,g.card,picked,busy]);
  if(key===choiceKey)return;choiceKey=key;
  if(!open)return;
@@ -344,18 +387,14 @@ function healingPanel(g){
  }));
 }
 function journey(g){
- const marks=g.marks?.length??0,need=snapshot.marksToPass??3;
- // 右上は短く: しるし（◆）と歌の書（♪ 集めた数）。仲間の一覧は「そうび」のウィンドウに
- $('marks').textContent='◆'.repeat(marks)+'◇'.repeat(Math.max(0,need-marks))+'　♪'+(g.songbook?.length??0)+'/'+(snapshot.soundCount??Object.keys(SOUND_NAMES).length)+(g.chapterDone?'　第1章 完':'');
- $('marks').title='しるし '+marks+'/'+need+'・歌の書 '+(g.songbook?.length??0);
+ const marks=g.marks?.length??0,need=snapshot.marksToPass??3,found=g.songbook?.length??0,total=snapshot.soundCount??Object.keys(SOUND_NAMES).length;
+ $('marks').textContent='◆'.repeat(marks)+'◇'.repeat(Math.max(0,need-marks))+'　♪'+found+'/'+total+(g.chapterDone?'　第1章 完':'');
+ $('marks').title='しるし '+marks+'/'+need+'・歌の書 '+found+'/'+total;
  $('partyLine').textContent='なかま　'+(g.party||['tom']).map(id=>COMPANION_NAMES[id]||id).join('・');
- $('marksLine').textContent='しるし　'+'◆'.repeat(marks)+'◇'.repeat(Math.max(0,need-marks))+(g.chapterDone?'　第1章 完':'');
- const found=g.songbook?.length??0,total=snapshot.soundCount??Object.keys(SOUND_NAMES).length;
- $('songLine').textContent='歌の書　'+found+'/'+total;$('songFill').style.width=(found/total*100)+'%';
- // 仲間の姿（止まった絵。動かない物は鳴らない）
- const party=['hero',...(g.party||['tom'])],key=party.join();
- if(key!==partyKey){partyKey=key;const pose={hero:'hero-walk-1',tom:'cat-walk-1',koro:'koro-idle-0',lumi:'lumi-fly-1',mio:'mio-idle-0'};
-  $('partyIcons').replaceChildren(...party.map(id=>{const li=document.createElement('li'),c=document.createElement('canvas'),src=sprites.get(pose[id]);c.width=32;c.height=32;if(src)c.getContext('2d').drawImage(src,0,0);const name=document.createElement('span');name.textContent=id==='hero'?'ゆっぴ':COMPANION_NAMES[id]||id;li.append(c,name);return li;}));}
+ $('songLine').textContent='集めた世界の音　'+found+'/'+total;
+ const key=(g.songbook||[]).join();
+ if(key!==partyKey){partyKey=key;const book=new Set(g.songbook||[]);
+  $('songbook').replaceChildren(...Object.entries(SOUND_NAMES).map(([id,name])=>{const li=document.createElement('li');li.textContent=book.has(id)?'♪ '+name:'？？？';if(!book.has(id))li.className='unknown';return li;}));}
 }
 let partyKey='';
 // サーバーとの時刻差。通信の遅れは毎回ちがうので、往復の真ん中で測り、1秒未満の変化は少しずつ寄せる（絵が跳ねない）。
@@ -399,8 +438,9 @@ for(const b of document.querySelectorAll('[data-sheet]'))b.onclick=()=>sheets.to
 for(const b of document.querySelectorAll('[data-close]'))b.onclick=()=>sheets.open(null);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')sheets.open(null);});
 for(const sheet of document.querySelectorAll('.sheet')){let y0=null;sheet.addEventListener('touchstart',e=>{y0=sheet.scrollTop<=0?e.touches[0].clientY:null;},{passive:true});sheet.addEventListener('touchend',e=>{if(y0!=null&&e.changedTouches[0].clientY-y0>60)sheets.open(null);y0=null;});}
-window.addEventListener('resize',layoutStage);
 $('play').onclick=()=>player.toggle();
+$('bigPlay').onclick=()=>player.toggle(true);
+for(const id of ['tap','lane'])$(id).addEventListener('pointerdown',e=>{e.preventDefault();rhythm.tap();$('tap').classList.add('hit');setTimeout(()=>$('tap').classList.remove('hit'),90);});
 $('stage').addEventListener('pointerdown',e=>{e.preventDefault();rhythm.tap();});
 document.addEventListener('keydown',e=>{if(e.code==='Space'&&!e.repeat&&!['INPUT','BUTTON','TEXTAREA'].includes(document.activeElement?.tagName)){e.preventDefault();rhythm.tap();}});
 $('rest').onclick=()=>command({type:'toggle'});
