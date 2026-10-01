@@ -25,6 +25,15 @@
    <p id="rhythmLabel" class="rhythm" aria-live="polite"></p>
    <p id="saveStatus" class="save" data-state="loading">接続中</p>
   </div>
+  <!-- ステータスウィンドウ: 仲間の姿・しるし・歌の書。空いた高さを使い、狭い画面では隠れる -->
+  <div id="statusWindow" class="window status-window">
+   <ul id="partyIcons" class="party-icons" aria-label="なかま"></ul>
+   <div class="journey">
+    <p id="marksLine" class="journey-line"></p>
+    <p id="songLine" class="journey-line"></p>
+    <div class="songbar" aria-hidden="true"><i id="songFill"></i></div>
+   </div>
+  </div>
   <div class="window message">
    <p id="sceneText" class="scene-text">はじめに、ひとつの歌があった。</p>
    <p id="error" class="error" hidden></p>

@@ -128,11 +128,15 @@ const smooth={
 let VIEW_TOP=0;
 function layoutStage(){
  const screen=document.querySelector('.screen'),wrap=document.querySelector('.stage-wrap'),c=$('stage');
- const others=[...screen.children].filter(el=>el!==wrap&&!el.hidden).reduce((a,el)=>a+el.offsetHeight+8,0);
- const availW=screen.clientWidth-16,availH=screen.clientHeight-16-others;if(availW<=0||availH<=0)return;
- const H=Math.max(180,Math.min(560,Math.round(256*availH/availW)));
+ const status=$('statusWindow'),others=[...screen.children].filter(el=>el!==wrap&&el!==status&&!el.hidden).reduce((a,el)=>a+el.offsetHeight+8,0);
+ const availW=screen.clientWidth-16,availH=screen.clientHeight-16-others-(status.hidden?0:96);if(availW<=0||availH<=0)return;
+ const H=Math.max(180,Math.min(230,Math.round(256*availH/availW)));
  if(c.height!==H){c.height=H;stage.snap.height=H;stage.ctx.imageSmoothingEnabled=false;stage.dirty=true;VIEW_TOP=180-H;}
  wrap.style.width=Math.floor(Math.min(availW,availH*256/H))+'px';
+ // 舞台と他のウィンドウを置いて残った高さが狭ければ、ステータスウィンドウを隠す（スクロールさせない）
+ const left=screen.clientHeight-16-others-wrap.offsetHeight-8;status.hidden=left<88;
+ // 仲間の姿は、空いた高さに合わせて大きく（32ドットの整数倍に近い大きさで）
+ status.style.setProperty('--icon',Math.max(40,Math.min(112,Math.floor((left-110)/32)*32))+'px');
 }
 const sprites={
  cache:new Map(),bg:new Map(),
@@ -333,7 +337,15 @@ function journey(g){
  $('marks').textContent='◆'.repeat(marks)+'◇'.repeat(Math.max(0,need-marks))+'　♪'+(g.songbook?.length??0)+'/'+(snapshot.soundCount??Object.keys(SOUND_NAMES).length)+(g.chapterDone?'　第1章 完':'');
  $('marks').title='しるし '+marks+'/'+need+'・歌の書 '+(g.songbook?.length??0);
  $('partyLine').textContent='なかま　'+(g.party||['tom']).map(id=>COMPANION_NAMES[id]||id).join('・');
+ $('marksLine').textContent='しるし　'+'◆'.repeat(marks)+'◇'.repeat(Math.max(0,need-marks))+(g.chapterDone?'　第1章 完':'');
+ const found=g.songbook?.length??0,total=snapshot.soundCount??Object.keys(SOUND_NAMES).length;
+ $('songLine').textContent='歌の書　'+found+'/'+total;$('songFill').style.width=(found/total*100)+'%';
+ // 仲間の姿（止まった絵。動かない物は鳴らない）
+ const party=['hero',...(g.party||['tom'])],key=party.join();
+ if(key!==partyKey){partyKey=key;const pose={hero:'hero-walk-1',tom:'cat-walk-1',koro:'koro-idle-0',lumi:'lumi-fly-1',mio:'mio-idle-0'};
+  $('partyIcons').replaceChildren(...party.map(id=>{const li=document.createElement('li'),c=document.createElement('canvas'),src=sprites.get(pose[id]);c.width=32;c.height=32;if(src)c.getContext('2d').drawImage(src,0,0);const name=document.createElement('span');name.textContent=id==='hero'?'ゆっぴ':COMPANION_NAMES[id]||id;li.append(c,name);return li;}));}
 }
+let partyKey='';
 function saved(state,text){$('saveStatus').dataset.state=state;$('saveStatus').textContent=text;}
 async function load(){
  if(loading||busy||document.hidden)return;

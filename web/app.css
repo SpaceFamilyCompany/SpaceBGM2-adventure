@@ -28,7 +28,7 @@ button,input{font:inherit;color:inherit}
 .game{position:relative;display:flex;flex-direction:column;height:100%;max-width:960px;margin:0 auto;padding-top:env(safe-area-inset-top,0px)}
 
 /* ゲーム画面: 舞台は 256×180 のドット絵。空いた高さに合わせて、縦横比を保ったまま最大まで大きくする */
-.screen{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;gap:8px;padding:8px}
+.screen{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-start;gap:8px;padding:8px}
 .stage-wrap{position:relative;align-self:center;width:100%;max-width:100%;border:2px solid var(--line);border-radius:4px;overflow:hidden;background:var(--ink)}
 .stage{display:block;width:100%;height:auto;image-rendering:pixelated;touch-action:manipulation;cursor:pointer}
 .hud{position:absolute;inset:0 0 auto 0;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 10px;pointer-events:none}
@@ -40,6 +40,17 @@ button,input{font:inherit;color:inherit}
 .save::before{content:"";display:inline-block;width:5px;height:5px;margin-right:5px;background:var(--mist);vertical-align:1px}
 .save[data-state=ok]::before{background:var(--glow)}
 .save[data-state=error]::before{background:var(--blossom)}
+
+/* ステータスウィンドウ（仲間の姿・しるし・歌の書）。ゲーム画面の比率を保ったまま、空いた高さを使う */
+.status-window{flex:1 1 auto;min-height:0;align-self:center;width:min(100%,640px);display:flex;flex-direction:column;justify-content:center;gap:10px;padding:10px 14px;overflow:hidden}
+.party-icons{display:flex;justify-content:space-around;align-items:flex-end;gap:4px;margin:0;padding:0;list-style:none}
+.party-icons li{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
+.party-icons canvas{width:min(var(--icon,64px),28vw);height:auto;image-rendering:pixelated}
+.party-icons span{font-family:var(--dot);font-size:12px;color:var(--moon)}
+.journey{display:grid;gap:4px}
+.journey-line{margin:0;font-family:var(--dot);font-size:13px;letter-spacing:.06em;color:var(--mist)}
+.songbar{height:6px;background:var(--night);border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.songbar i{display:block;height:100%;width:0;background:var(--glow)}
 
 /* メッセージウィンドウ（語り・場面の一文） */
 .message{align-self:center;width:min(100%,640px);padding:10px 14px;min-height:64px}
