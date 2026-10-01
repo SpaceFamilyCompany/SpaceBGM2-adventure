@@ -466,7 +466,9 @@ export function stepAt(track,seconds){
 export function segmentIndex(track,step){let lo=0,hi=track.segments.length-1;while(lo<hi){const mid=(lo+hi+1)>>1;if(track.segments[mid].start<=step)lo=mid;else hi=mid-1;}return lo;}
 export function secondsAt(track,card,turn,fraction){
  const seg=track.running?track.segments[Math.max(0,Math.min(track.segments.length-1,card))]:track.segments[0];
- const step=Math.min(seg.start+seg.steps-1e-6,seg.start+(Math.max(0,turn)+Math.max(0,Math.min(.999,fraction)))*TURN_STEPS),k=Math.floor(step);
+ // 冒険中は、ターンの終わりを過ぎても（次の通信が届くまで）次のターン・次のカードへそのまま進む。止めると絵が止まって跳ねる。
+ const raw=seg.start+(Math.max(0,turn)+Math.max(0,Math.min(8,fraction)))*TURN_STEPS;
+ const step=track.running?raw%track.steps:Math.min(seg.start+seg.steps-1e-6,raw),k=Math.floor(step);
  return track.stepTimes[k]+(step-k)*(track.stepTimes[k+1]-track.stepTimes[k]);
 }
 
