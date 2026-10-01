@@ -102,7 +102,7 @@ const player={
   const playing=!this.audio.paused,waiting=!this.track||(this.wanted!==this.track.key&&!playing);
   $('play').disabled=!this.track;
   $('play').setAttribute('aria-pressed',String(playing));
-  $('playLabel').textContent=!this.track?'曲を準備中':playing?'止める':'再生';
+  $('playLabel').textContent=!this.track?'準備中':playing?'止める':'再生';
   if('mediaSession' in navigator)navigator.mediaSession.playbackState=playing?'playing':'paused';
   document.body.dataset.waiting=String(waiting);
  },
@@ -124,6 +124,16 @@ const smooth={
 };
 
 // ドット絵は起動時に1度だけ小さな画像にしておき、毎回は貼るだけ。
+// 舞台は世界（320×180）の横の中央 256 を描く。縦長の画面では空を上に伸ばし、残りの高さいっぱいに広げる（世界は下にそろえる）。
+let VIEW_TOP=0;
+function layoutStage(){
+ const screen=document.querySelector('.screen'),wrap=document.querySelector('.stage-wrap'),c=$('stage');
+ const others=[...screen.children].filter(el=>el!==wrap&&!el.hidden).reduce((a,el)=>a+el.offsetHeight+8,0);
+ const availW=screen.clientWidth-16,availH=screen.clientHeight-16-others;if(availW<=0||availH<=0)return;
+ const H=Math.max(180,Math.min(560,Math.round(256*availH/availW)));
+ if(c.height!==H){c.height=H;stage.snap.height=H;stage.ctx.imageSmoothingEnabled=false;stage.dirty=true;VIEW_TOP=180-H;}
+ wrap.style.width=Math.floor(Math.min(availW,availH*256/H))+'px';
+}
 const sprites={
  cache:new Map(),bg:new Map(),
  rgba:Object.fromEntries(Object.entries(ART.palette).map(([ch,hex])=>[ch,[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)]])),
@@ -138,6 +148,8 @@ const sprites={
   }
   this.cache.set(key,c);return c;
  },
+ // 景色の空の色（遠景のいちばん上の色）。縦長の画面で伸ばした空を塗る。
+ skyColor(theme){const c=this.bg.get(theme+'-far');if(!c)return '#232046';if(!this.sky)this.sky={};if(!this.sky[theme]){const [r,g,b]=c.getContext('2d').getImageData(4,1,1,1).data;this.sky[theme]=`rgb(${r},${g},${b})`;}return this.sky[theme];},
  // 空と地面は景色ごとの SVG を1度だけ画像にする。
  loadBackgrounds(){
   for(const [key,svg] of Object.entries(ART.bg)){
@@ -156,7 +168,7 @@ const stage={
  // 曲が切り替わったら、今の画面を写しておき 0.5 秒かけて新しい画面へ溶かす。
  setTrack(track){
   if(track===this.track)return;
-  if(this.track){this.snap.getContext('2d').clearRect(0,0,256,144);this.snap.getContext('2d').drawImage($('stage'),0,0);this.swap={start:performance.now()};}
+  if(this.track){this.snap.getContext('2d').clearRect(0,0,256,this.snap.height);this.snap.getContext('2d').drawImage($('stage'),0,0);this.swap={start:performance.now()};}
   this.track=track;this.segment=-1;this.dirty=true;
  },
  enterSegment(scene){
@@ -169,7 +181,7 @@ const stage={
  tiles(item,theme,alpha){
   const c=sprites.bg.get(theme+'-'+item.layer);if(!c||alpha<=0)return;
   const x=-Math.round(item.offset%320)-VIEW_LEFT;this.ctx.globalAlpha=alpha;
-  this.ctx.drawImage(c,x,-36);this.ctx.drawImage(c,x+320,-36);this.ctx.globalAlpha=1;
+  this.ctx.drawImage(c,x,-VIEW_TOP);this.ctx.drawImage(c,x+320,-VIEW_TOP);this.ctx.globalAlpha=1;
  },
  draw(seconds){
   const t=this.track;if(!t)return;
@@ -183,14 +195,19 @@ const stage={
   const sig=(ring?ring.x+','+ring.y+','+ring.r+'|':'')+scene.items.map(i=>i.kind==='bg'?i.layer+Math.round(i.offset):i.kind==='aura'?'aura'+i.r+i.alpha.toFixed(2):i.key+i.x+','+i.y).join('|')+'|'+scene.shake+'|'+themeA.toFixed(2)+'|'+swapA.toFixed(2);
   if(sig===this.last&&!this.dirty)return;
   this.last=sig;this.dirty=false;
-  const ctx=this.ctx;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,256,144);ctx.setTransform(1,0,0,1,0,scene.shake);
+  const ctx=this.ctx;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,256,ctx.canvas.height);
+  // 伸ばした空は、いまの景色の空の色で塗る
+  if(VIEW_TOP<0){ctx.fillStyle=sprites.skyColor(this.theme);ctx.fillRect(0,0,256,-VIEW_TOP+2);
+   // 伸ばした空の星（動かない飾り。動かない物は鳴らない）
+   ctx.fillStyle='#EAE6F5';for(let i=0;i<-VIEW_TOP/6;i++){const x=(i*97+31)%256,y=(i*53+17)%Math.max(1,-VIEW_TOP-8);ctx.globalAlpha=.25+(i%3)*.2;ctx.fillRect(x,y,1,1);}ctx.globalAlpha=1;}
+  ctx.setTransform(1,0,0,1,0,scene.shake);
   for(const item of scene.items){
-   if(item.kind==='aura'){ctx.globalAlpha=item.alpha;ctx.fillStyle='#A9DDE2';ctx.beginPath();ctx.arc(item.x-VIEW_LEFT,item.y-36,item.r,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;continue;}
+   if(item.kind==='aura'){ctx.globalAlpha=item.alpha;ctx.fillStyle='#A9DDE2';ctx.beginPath();ctx.arc(item.x-VIEW_LEFT,item.y-VIEW_TOP,item.r,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;continue;}
    if(item.kind==='bg'){if(this.themeFade&&themeA<1)this.tiles(item,this.themeFade.from,1);this.tiles(item,this.theme,themeA);continue;}
-   const c=sprites.get(item.key);if(c)ctx.drawImage(c,item.x-VIEW_LEFT,item.y-36);
+   const c=sprites.get(item.key);if(c)ctx.drawImage(c,item.x-VIEW_LEFT,item.y-VIEW_TOP);
   }
   ctx.setTransform(1,0,0,1,0,0);
-  if(ring){ctx.strokeStyle='#A9DDE2';ctx.lineWidth=1;ctx.beginPath();ctx.arc(ring.x-VIEW_LEFT,ring.y-36,Math.max(4,ring.r),0,Math.PI*2);ctx.stroke();if(ring.r<=6){ctx.fillStyle='#F0A9B9';ctx.fillRect(ring.x-VIEW_LEFT-1,ring.y-37,3,3);}}
+  if(ring){ctx.strokeStyle='#A9DDE2';ctx.lineWidth=1;ctx.beginPath();ctx.arc(ring.x-VIEW_LEFT,ring.y-VIEW_TOP,Math.max(4,ring.r),0,Math.PI*2);ctx.stroke();if(ring.r<=6){ctx.fillStyle='#F0A9B9';ctx.fillRect(ring.x-VIEW_LEFT-1,ring.y-37,3,3);}}
   if(themeA>=1)this.themeFade=null;
   if(this.swap){ctx.globalAlpha=1-swapA;ctx.drawImage(this.snap,0,0);ctx.globalAlpha=1;if(swapA>=1)this.swap=null;}
  }
@@ -251,6 +268,7 @@ function loop(){
 
 function showError(text){$('error').textContent=text;$('error').hidden=false;}
 function render(){
+ layoutStage();
  if(!snapshot)return;
  const g=snapshot.game,catalog=snapshot.equipmentCatalog;
  wardrobe(g,catalog);
@@ -311,7 +329,10 @@ function healingPanel(g){
 }
 function journey(g){
  const marks=g.marks?.length??0,need=snapshot.marksToPass??3;
- $('marks').textContent='しるし '+'◆'.repeat(marks)+'◇'.repeat(Math.max(0,need-marks))+'　仲間 '+(g.party||['tom']).map(id=>COMPANION_NAMES[id]||id).join('・')+'　歌の書 '+(g.songbook?.length??0)+'/'+(snapshot.soundCount??Object.keys(SOUND_NAMES).length)+(g.chapterDone?'　第1章 完':'');
+ // 右上は短く: しるし（◆）と歌の書（♪ 集めた数）。仲間の一覧は「そうび」のウィンドウに
+ $('marks').textContent='◆'.repeat(marks)+'◇'.repeat(Math.max(0,need-marks))+'　♪'+(g.songbook?.length??0)+'/'+(snapshot.soundCount??Object.keys(SOUND_NAMES).length)+(g.chapterDone?'　第1章 完':'');
+ $('marks').title='しるし '+marks+'/'+need+'・歌の書 '+(g.songbook?.length??0);
+ $('partyLine').textContent='なかま　'+(g.party||['tom']).map(id=>COMPANION_NAMES[id]||id).join('・');
 }
 function saved(state,text){$('saveStatus').dataset.state=state;$('saveStatus').textContent=text;}
 async function load(){
@@ -339,6 +360,16 @@ async function command(action){
 stage.init();
 sprites.loadBackgrounds();
 player.init();
+// 下から出るウィンドウ（そうび・どうぐ・きろく）。1つだけ開く。×・同じコマンド・Esc・下へのスワイプで閉じる。
+const sheets={
+ open(id){for(const b of document.querySelectorAll('[data-sheet]')){const on=b.dataset.sheet===id;b.setAttribute('aria-expanded',String(on));$(b.dataset.sheet).hidden=!on;}if(id)$(id).querySelector('.close')?.focus();},
+ toggle(id){this.open($(id).hidden?id:null);}
+};
+for(const b of document.querySelectorAll('[data-sheet]'))b.onclick=()=>sheets.toggle(b.dataset.sheet);
+for(const b of document.querySelectorAll('[data-close]'))b.onclick=()=>sheets.open(null);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')sheets.open(null);});
+for(const sheet of document.querySelectorAll('.sheet')){let y0=null;sheet.addEventListener('touchstart',e=>{y0=sheet.scrollTop<=0?e.touches[0].clientY:null;},{passive:true});sheet.addEventListener('touchend',e=>{if(y0!=null&&e.changedTouches[0].clientY-y0>60)sheets.open(null);y0=null;});}
+window.addEventListener('resize',layoutStage);
 $('play').onclick=()=>player.toggle();
 $('stage').addEventListener('pointerdown',e=>{e.preventDefault();rhythm.tap();});
 document.addEventListener('keydown',e=>{if(e.code==='Space'&&!e.repeat&&!['INPUT','BUTTON','TEXTAREA'].includes(document.activeElement?.tagName)){e.preventDefault();rhythm.tap();}});

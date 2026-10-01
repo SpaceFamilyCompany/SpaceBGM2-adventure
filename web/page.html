@@ -13,53 +13,65 @@
 <style>/* APP_CSS */</style>
 </head>
 <body>
-<main class="app">
- <section class="stage-wrap" aria-label="冒険の様子">
-  <canvas id="stage" class="stage" width="256" height="144" role="img" aria-labelledby="sceneText"></canvas>
-  <div class="hud">
-   <p class="place"><span id="themeName">森の入口</span></p>
+<main class="game">
+ <!-- ゲーム画面。舞台が画面いっぱいに広がり、その下にメッセージと試練のウィンドウ -->
+ <section class="screen" aria-label="冒険の様子">
+  <div class="stage-wrap">
+   <canvas id="stage" class="stage" width="256" height="180" role="img" aria-labelledby="sceneText"></canvas>
+   <div class="hud">
+    <p class="place"><span id="themeName">森の入口</span></p>
+    <p id="marks" class="status"></p>
+   </div>
+   <p id="rhythmLabel" class="rhythm" aria-live="polite"></p>
    <p id="saveStatus" class="save" data-state="loading">接続中</p>
   </div>
-  <p id="rhythmLabel" class="rhythm" aria-live="polite"></p>
- </section>
-
- <section class="panel">
-  <p id="sceneText" class="scene-text">はじめに、ひとつの歌があった。</p>
-  <p id="marks" class="marks"></p>
-  <div id="choice" class="choice" hidden>
+  <div class="window message">
+   <p id="sceneText" class="scene-text">はじめに、ひとつの歌があった。</p>
+   <p id="error" class="error" hidden></p>
+  </div>
+  <div id="choice" class="window choice" hidden>
    <p class="choice-title" id="choiceTitle">試練</p>
    <div class="choice-options" id="choiceOptions" role="radiogroup" aria-labelledby="choiceTitle"></div>
    <p class="choice-note" id="choiceNote"></p>
   </div>
+ </section>
 
-  <div class="controls">
-   <button id="play" class="play" type="button" aria-pressed="false" disabled><span class="play-icon" aria-hidden="true"></span><span id="playLabel">曲を準備中</span></button>
-   <button id="rest" class="rest" type="button">休む</button>
-   <label class="volume" for="volume"><span>音量</span><input id="volume" type="range" min="0" max="100" value="60"></label>
+ <!-- コマンド。そうび・どうぐ・きろくは下から出るウィンドウを開く -->
+ <nav class="commands" aria-label="コマンド">
+  <button id="play" class="cmd play" type="button" aria-pressed="false" disabled><span class="play-icon" aria-hidden="true"></span><span id="playLabel">準備中</span></button>
+  <button id="rest" class="cmd" type="button">休む</button>
+  <button class="cmd" type="button" data-sheet="gearSheet" aria-expanded="false">そうび</button>
+  <button class="cmd" type="button" data-sheet="itemSheet" aria-expanded="false">どうぐ</button>
+  <button class="cmd" type="button" data-sheet="logSheet" aria-expanded="false">きろく</button>
+ </nav>
+
+ <section id="gearSheet" class="window sheet" hidden aria-labelledby="gearTitle">
+  <header class="sheet-head"><h2 id="gearTitle">そうび</h2><button class="close" type="button" data-close aria-label="閉じる">×</button></header>
+  <p class="party" id="partyLine"></p>
+  <div class="gear-slot">
+   <span class="gear-label" id="weaponLabel">武器</span>
+   <div class="gear-options" id="weaponOptions" role="radiogroup" aria-labelledby="weaponLabel"></div>
+   <p class="gear-trait" id="weaponTrait"></p>
   </div>
+  <div class="gear-slot">
+   <span class="gear-label" id="armorLabel">防具</span>
+   <div class="gear-options" id="armorOptions" role="radiogroup" aria-labelledby="armorLabel"></div>
+   <p class="gear-trait" id="armorTrait"></p>
+  </div>
+ </section>
 
-  <section class="gear" aria-labelledby="gearTitle">
-   <h2 id="gearTitle" class="gear-title">装備</h2>
-   <div class="gear-slot">
-    <span class="gear-label" id="weaponLabel">武器</span>
-    <div class="gear-options" id="weaponOptions" role="radiogroup" aria-labelledby="weaponLabel"></div>
-    <p class="gear-trait" id="weaponTrait"></p>
-   </div>
-   <div class="gear-slot">
-    <span class="gear-label" id="armorLabel">防具</span>
-    <div class="gear-options" id="armorOptions" role="radiogroup" aria-labelledby="armorLabel"></div>
-    <p class="gear-trait" id="armorTrait"></p>
-   </div>
-  </section>
+ <section id="itemSheet" class="window sheet" hidden aria-labelledby="itemTitle">
+  <header class="sheet-head"><h2 id="itemTitle">どうぐ</h2><button class="close" type="button" data-close aria-label="閉じる">×</button></header>
+  <h3 class="sheet-sub">癒しの道具</h3>
+  <div class="healing-items" id="healingItems"></div>
+  <p class="healing-now" id="healingNow"></p>
+  <h3 class="sheet-sub">音量</h3>
+  <label class="volume" for="volume"><span class="visually-hidden">音量</span><input id="volume" type="range" min="0" max="100" value="60"></label>
+ </section>
 
-  <section class="gear healing" aria-labelledby="healingTitle">
-   <h2 id="healingTitle" class="gear-title">癒しの道具</h2>
-   <div class="healing-items" id="healingItems"></div>
-   <p class="gear-trait" id="healingNow"></p>
-  </section>
-
-  <ul id="logs" class="logs" aria-label="できごと" aria-live="polite"></ul>
-  <p id="error" class="error" hidden></p>
+ <section id="logSheet" class="window sheet" hidden aria-labelledby="logTitle">
+  <header class="sheet-head"><h2 id="logTitle">きろく</h2><button class="close" type="button" data-close aria-label="閉じる">×</button></header>
+  <ul id="logs" class="logs" aria-live="polite"></ul>
  </section>
 </main>
 <script>/* APP_JS */</script>
