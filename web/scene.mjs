@@ -59,6 +59,7 @@ export function walkTable(track){
 // items は描く順（奥から手前）に並ぶ:
 //  {kind:'bg', layer:'far'|'near', theme, offset}  空・地面のタイル（offset だけ左へずらして横に並べる）
 //  {kind:'sprite', key, x, y}                       ドット絵（key は ART のグリッド名）
+//  {kind:'aura', x, y, r, alpha}                     癒しの道具の光の輪（中心と半径）
 export function sceneAt(track,seconds,gear=[]){
  const {step,fraction}=stepAt(track,seconds),index=segmentIndex(track,step),seg=track.segments[index],local=step-seg.start;
  const moved=track.scrollBase+walkTable(track)[step]+(track.moving[step]?fraction:0),beats=(step+fraction)/2;
@@ -98,6 +99,8 @@ export function sceneAt(track,seconds,gear=[]){
  if(heroAction==='attack'){const a=attackPose(+heroFrame,fraction,track.hits||[0]);heroKey='hero-attack-'+a.pose;hdx=a.dx;hdy=a.dy;}
  const hx=SPOTS.hero[0]+hdx,hy=SPOTS.hero[1]+hdy,pose=heroKey.slice(5);
  const layer=side=>gear.filter(g=>g.endsWith(':'+side)).map(g=>g.split(':')[0]);
+ // 癒しの道具の光の輪。拍の頭（響きが鳴る瞬間）で一番大きく、拍の間にしぼむ。
+ if(track.healing){const beatFrac=((step+fraction)/2)%1;items.push({kind:'aura',x:hx+16,y:hy+18,r:Math.round(14+5*(1-beatFrac)),alpha:.25+.35*(1-beatFrac)});}
  for(const item of layer('back'))sprite(`eq:${item}-back-${pose}`,hx,hy);
  sprite(heroKey,hx,hy);
  for(const item of layer('front'))sprite(`eq:${item}-front-${pose}`,hx,hy);

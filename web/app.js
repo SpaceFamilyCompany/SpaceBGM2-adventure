@@ -32,7 +32,7 @@ const player={
  // 楽譜に渡す状態。攻撃力（戦闘のターン数が変わる）も渡す。
  stateFor(g){
   const choices=Object.fromEntries(Object.entries(g.choices||{}).filter(([k])=>k.startsWith(g.cycle+':')).map(([k,v])=>[+k.split(':')[1],v]));
-  return {zone:'forest',running:g.running,cycle:g.cycle,card:g.card,weapon:g.equipment?.weapon,armor:g.equipment?.armor,level:1,companion:true,power:snapshot?.combatPower??1,party:g.party||['tom'],choices,prologue:g.prologue||0,songbook:g.songbook||[]};
+  return {zone:'forest',running:g.running,cycle:g.cycle,card:g.card,weapon:g.equipment?.weapon,armor:g.equipment?.armor,level:1,companion:true,power:snapshot?.combatPower??1,party:g.party||['tom'],choices,prologue:g.prologue||0,songbook:g.songbook||[],healing:g.healing&&g.healing.until>Date.now()+offset?g.healing.id:null};
  },
  // ゲームの状態に合う曲を用意する（装備・休憩が変わった時だけ作り直す）。
  want(g){
@@ -180,11 +180,12 @@ const stage={
   rhythm.update(t,seconds);
   const ring=rhythm.ring(t,scene,seconds),label=rhythm.label();
   if($('rhythmLabel').textContent!==label)$('rhythmLabel').textContent=label;
-  const sig=(ring?ring.x+','+ring.y+','+ring.r+'|':'')+scene.items.map(i=>i.kind==='bg'?i.layer+Math.round(i.offset):i.key+i.x+','+i.y).join('|')+'|'+scene.shake+'|'+themeA.toFixed(2)+'|'+swapA.toFixed(2);
+  const sig=(ring?ring.x+','+ring.y+','+ring.r+'|':'')+scene.items.map(i=>i.kind==='bg'?i.layer+Math.round(i.offset):i.kind==='aura'?'aura'+i.r+i.alpha.toFixed(2):i.key+i.x+','+i.y).join('|')+'|'+scene.shake+'|'+themeA.toFixed(2)+'|'+swapA.toFixed(2);
   if(sig===this.last&&!this.dirty)return;
   this.last=sig;this.dirty=false;
   const ctx=this.ctx;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,256,144);ctx.setTransform(1,0,0,1,0,scene.shake);
   for(const item of scene.items){
+   if(item.kind==='aura'){ctx.globalAlpha=item.alpha;ctx.fillStyle='#A9DDE2';ctx.beginPath();ctx.arc(item.x-VIEW_LEFT,item.y-36,item.r,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;continue;}
    if(item.kind==='bg'){if(this.themeFade&&themeA<1)this.tiles(item,this.themeFade.from,1);this.tiles(item,this.theme,themeA);continue;}
    const c=sprites.get(item.key);if(c)ctx.drawImage(c,item.x-VIEW_LEFT,item.y-36);
   }
@@ -254,6 +255,7 @@ function render(){
  const g=snapshot.game,catalog=snapshot.equipmentCatalog;
  wardrobe(g,catalog);
  choicePanel(g);
+ healingPanel(g);
  journey(g);
  $('rest').textContent=g.running?'休む':'冒険を再開';
  $('rest').disabled=busy;
@@ -293,6 +295,19 @@ function choicePanel(g){
   return b;
  }));
  $('choiceNote').textContent=picked?'選んだ。このカードの終わりに決まる。':'選ばなければ「'+trial.options.find(o=>o.id===trial.default).label+'」になる。';
+}
+// 癒しの道具。持っている数と「使う」、使っている間は残り時間。効能はうたわず「リラックスのための響き」とだけ書く。
+let healingKey='';
+function healingPanel(g){
+ const active=g.healing&&g.healing.until>Date.now()+offset?g.healing:null,mins=active?Math.ceil((active.until-Date.now()-offset)/60000):0;
+ $('healingNow').textContent=active?HEALING[active.id].text+'　残り'+mins+'分（リラックスのための響き）':'';
+ const key=JSON.stringify([g.items,active?.id,busy]);if(key===healingKey)return;healingKey=key;
+ $('healingItems').replaceChildren(...Object.entries(HEALING).map(([id,h])=>{
+  const n=g.items?.[id]??0,b=document.createElement('button');b.type='button';
+  b.textContent=h.name+' ×'+n+'　使う';b.disabled=busy||n<1||!!active;b.title=h.text;
+  b.onclick=()=>command({type:'use',item:id});
+  return b;
+ }));
 }
 function journey(g){
  const marks=g.marks?.length??0,need=snapshot.marksToPass??3;

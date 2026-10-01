@@ -44,6 +44,10 @@ export function cardTurns(card,power=1){
  return TURNS_PER_CARD;
 }
 export const COMPANION_NAMES={tom:'トム',koro:'コロ',lumi:'ルミ',mio:'ミオ'};
+// 癒しの道具。使うと30分、曲の下で特別な響きが鳴る（効能はうたわない。docs/story.md）。web/score.mjs の HEALING と同じ（テストで確認）。
+export const HEALING_ITEMS=['herb','holy-water','angel-feather'];
+export const HEALING_MS=30*60*1000;
+const HEALING_NAMES={herb:'薬草','holy-water':'聖水','angel-feather':'天使の羽'};
 // 世界の音（リズムゲームで集める音）。web/score.mjs の SOUND_NAMES と同じ一覧（テストで確認）。
 export const SOUNDS=['slime','mushling','beetle','wisp','guardian','frog','owl','firefly','leaves','chest','spark','fire','signpost','altar',
  'flower','brook','sapling','fireflies','bush','mushroom','lantern-moss','big-tree','distant-tree','stone-pillar','dead-tree','mist-puff','owl-perch','moon-mote','resonant-stone','arch'];
@@ -62,6 +66,8 @@ export function migrateGame(input) {
  g.prologue ??= PROLOGUE_TURNS;
  g.turn ??= 0; // いまのカードの何ターン目か
  g.songbook ??= []; // 集めた世界の音（歌の書）
+ g.items ??= {herb:1}; // 癒しの道具（はじめに薬草を1つ）
+ g.healing ??= null; // 使っている癒しの道具 {id, until}
  return g;
 }
 export function equipmentPower(g) {return EQUIPMENT.filter(item=>g.inventory?.includes(item.id)&&g.equipment?.[item.slot]===item.id).reduce((sum,item)=>sum+item.power,0);}
@@ -74,7 +80,7 @@ export const ZONES = [
  {id:'castle',name:'月影の古城',subtitle:'忘れられた旋律を探して',level:5,mult:3,icon:'🏰',enemy:'影の騎士',boss:'月影の竜',bpm:108}
 ];
 export function initialGame(now = Date.now()) {
- return {version:5,inventory:[],equipment:{weapon:null,armor:null},coins:60,crystals:0,level:1,companion:false,zone:'forest',cycle:0,card:0,prologue:PROLOGUE_TURNS,turn:0,songbook:[],chapter:1,chapterDone:false,marks:[],party:['tom'],choices:{},clears:{forest:0,cave:0,castle:0},running:true,lastAt:now,steps:0,totalCoins:0,logs:[{id:0,text:'はじめに、ひとつの歌があった。',kind:'prologue',at:now}]};
+ return {version:5,inventory:[],equipment:{weapon:null,armor:null},coins:60,crystals:0,level:1,companion:false,zone:'forest',cycle:0,card:0,prologue:PROLOGUE_TURNS,turn:0,songbook:[],items:{herb:1},healing:null,chapter:1,chapterDone:false,marks:[],party:['tom'],choices:{},clears:{forest:0,cave:0,castle:0},running:true,lastAt:now,steps:0,totalCoins:0,logs:[{id:0,text:'はじめに、ひとつの歌があった。',kind:'prologue',at:now}]};
 }
 export function unlocked(g,id) {
  const i=ZONES.findIndex(z=>z.id===id);
@@ -95,6 +101,7 @@ const TRIAL_LOGS={
 function log(g,text,kind,at) { g.logs.unshift({id:g.steps,text,kind,at}); g.logs=g.logs.slice(0,24); }
 export function advanceGame(input,now=Date.now()) {
  const g=migrateGame(input);
+ if(g.healing&&g.healing.until<=now)g.healing=null; // 30分たったら響きが終わる
  const elapsed=Math.max(0,now-g.lastAt);
  const offline=Math.max(0,elapsed-20000);
  const report={seconds:Math.floor(Math.min(offline,OFFLINE_LIMIT)/1000),coins:0,crystals:0,steps:0,items:[],capped:elapsed>OFFLINE_LIMIT};
@@ -132,6 +139,8 @@ export function advanceGame(input,now=Date.now()) {
    nextCard(g);pruneChoices(g);}
   else { log(g,event==='treasure'?'宝箱を発見！ '+reward+'G。':event==='battle'?[...new Set(card.monsters)].map(m=>MONSTER_NAMES[m]).join('と')+(card.foes>1?'の群れ':'')+'を倒した！ '+reward+'G。':'道を進み、'+reward+'Gを見つけた。',event,g.lastAt);nextCard(g);pruneChoices(g); }
   const roll=lootRoll(g.steps,g.zone);
+  // 宝箱を開けると、癒しの道具がひとつ入っている
+  if(event==='treasure'){const item=HEALING_ITEMS[(roll>>8)%HEALING_ITEMS.length];g.items[item]=(g.items[item]||0)+1;log(g,'宝箱に'+HEALING_NAMES[item]+'が入っていた。','item',g.lastAt);}
   if(event==='boss'||event==='treasure'||(event==='battle'&&roll%100<15+10*card.foes)) {
    const items=EQUIPMENT.filter(item=>item.zone===g.zone);
    const missing=items.filter(item=>!g.inventory.includes(item.id));
@@ -153,6 +162,7 @@ export function applyAction(input,action,now=Date.now()) {
   case 'hire': if(g.companion)throw new Error('トムはもう仲間です。');if(g.coins<120)throw new Error('ゴールドが足りません。');g.coins-=120;g.companion=true;log(g,'白キジ猫のトムが仲間になった！ 報酬が20％増える。','level',now);break;
   case 'zone': if(!unlocked(g,action.zone))throw new Error('まだこの場所には行けません。');if(action.zone!==g.zone){g.zone=action.zone;newDeck(g);g.lastAt=now;log(g,ZONES.find(z=>z.id===g.zone).name+'へ旅立った。','travel',now);}break;
   case 'choose': {const card=cardFor(g),trial=TRIALS[card.kind];if(!trial||!trial.options[action.option])throw new Error('今は選べる試練がありません。');g.choices[choiceKey(g)]=action.option;break;}
+  case 'use': {const id=action.item;if(!HEALING_ITEMS.includes(id)||!(g.items[id]>0))throw new Error('その道具を持っていません。');g.items[id]--;g.healing={id,until:now+HEALING_MS};log(g,HEALING_NAMES[id]+'を使った。30分、やわらかな響きに包まれる。','item',now);break;}
   case 'collect': {if(!SOUNDS.includes(action.src))throw new Error('この世界にない音です。');if(!g.songbook.includes(action.src)){g.songbook.push(action.src);log(g,'世界の音を1つ集めた。歌の書 '+g.songbook.length+'/'+SOUNDS.length,'song',now);}break;}
   case 'toggle':g.running=!g.running;g.lastAt=now;log(g,g.running?'冒険を再開した。':'焚き火でひと休み。','travel',now);break;
   default:throw new Error('不明な操作です。');

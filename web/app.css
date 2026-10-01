@@ -74,6 +74,11 @@ button,input{font:inherit;color:inherit}
 .gear-options button:hover{background:var(--panel)}
 .gear-options button[aria-checked=true]{border-color:var(--glow);background:var(--panel);color:var(--glow)}
 .gear-options button:disabled{opacity:.5;cursor:progress}
+.healing-items{display:flex;flex-wrap:wrap;gap:6px}
+.healing-items button{min-height:36px;padding:0 12px;border:1px solid var(--line);background:var(--ink);font-size:13px;cursor:pointer}
+.healing-items button:hover{background:var(--panel)}
+.healing-items button:disabled{opacity:.45;cursor:default}
+.healing .gear-trait{grid-column:auto;color:var(--glow)}
 .gear-trait{grid-column:2;margin:0;font-size:12.5px;line-height:1.6;color:var(--mist);min-height:1.6em}
 
 .logs{display:flex;flex-direction:column;gap:4px;margin:0;padding:12px 0 0;list-style:none;border-top:1px solid var(--line);font-size:13px;color:var(--mist)}

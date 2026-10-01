@@ -140,3 +140,12 @@ test('rhythm game: world sounds are tagged, uncollected ones sound muted, and ev
  for(const e of wild.events)assert.ok(SOUND_NAMES[e.src]);
  assert.ok(!wild.notes.some(n=>n.bus==='hero'&&n.src),'Yuppi and the party are not collectible');
 });
+
+test('healing items: herb sounds 528Hz on every beat, angel feather retunes the song to 432Hz',async()=>{
+ const {HEALING}=await import('../web/score.mjs');const {HEALING_ITEMS}=await import('../server/game.mjs');
+ assert.deepEqual(Object.keys(HEALING),HEALING_ITEMS);
+ const herb=composeTrack({...run,healing:'herb'},world),plain=composeTrack(run,world),feather=composeTrack({...run,healing:'angel-feather'},world);
+ const tones=herb.notes.filter(n=>n.freq);assert.equal(tones.length,herb.steps/2,'one breath per beat');assert.ok(tones.every(n=>n.freq===528&&n.step%2===0));
+ assert.equal(plain.notes.filter(n=>n.freq).length,0);assert.equal(feather.tuning,432);assert.equal(plain.tuning,440);
+ assert.notEqual(herb.key,plain.key);assert.deepEqual(herb.actors,plain.actors);
+});

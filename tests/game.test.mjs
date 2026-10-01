@@ -84,3 +84,12 @@ test('collecting a world sound writes it once into the songbook',()=>{
  assert.deepEqual(g.songbook,['frog']);assert.equal(g.logs.filter(l=>l.kind==='song').length,1);
  assert.throws(()=>applyAction(g,{type:'collect',src:'dragon'},now));
 });
+test('healing items come from treasure chests and sound for thirty minutes once used',async()=>{
+ const {HEALING_MS}=await import('../server/game.mjs');
+ let g=fresh(now);assert.equal(g.items.herb,1);
+ g=at(g,'treasure');g=finish(g);assert.equal(Object.values(g.items).reduce((a,b)=>a+b,0),2,'a chest holds a healing item');
+ g=applyAction(g,{type:'use',item:'herb'},g.lastAt);assert.equal(g.healing.id,'herb');assert.equal(g.items.herb,(g.items.herb??0));
+ assert.throws(()=>applyAction({...g,items:{}},{type:'use',item:'herb'},g.lastAt));
+ const later=advanceGame(g,g.healing.until+1).game;assert.equal(later.healing,null);
+ assert.ok(HEALING_MS===30*60*1000);
+});

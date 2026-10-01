@@ -55,6 +55,13 @@ export const SOUND_NAMES = {
  'mist-puff':'霧のふわり', 'owl-perch':'止まり木のコツ', 'moon-mote':'月のかけら', 'resonant-stone':'響く石', arch:'門のひゅう'
 };
 export const COLLECT_GAIN = .5;
+// 癒しの道具。使うと30分、曲の下で響きが鳴る（効能はうたわない）。tone はその周波数の柔らかな音を1拍ごとに息をするように鳴らす、
+// tuning は曲全体の基準の音（A）の高さを変える。ゆっぴのまわりの光の輪も同じ拍で脈打つ。server/game.mjs の HEALING_ITEMS と同じ並び。
+export const HEALING = {
+ herb:{name:'薬草', tone:528, text:'528Hzの響き'},
+ 'holy-water':{name:'聖水', tone:417, text:'417Hzの響き'},
+ 'angel-feather':{name:'天使の羽', tuning:432, text:'432Hzの調律'}
+};
 // 試練のカード。server/game.mjs の TRIALS と同じ選択肢・既定（テストで確認）。画面の選択肢の文言もここ。
 export const TRIALS = {
  fork:{title:'迷い', text:'分かれ道。小石がひとつ、片方の道へ転がっていく。', options:[{id:'follow',label:'小石を追う'},{id:'light',label:'光の道を行く'}], default:'follow', join:{follow:'koro'}},
@@ -142,6 +149,7 @@ const INSTRUMENTS = {
  timpani:{partials:[[1,1],[1.5,.25],[2,.2]], attack:.002, decay:.55, glide:3},
  pizz:{partials:[[1,1],[2,.4],[3,.15]], attack:.002, decay:.12},
  'pizz-tick':{partials:[[1,1],[2,.3]], attack:.001, decay:.04},
+ aura:{partials:[[1,1],[2,.04]], attack:.22, decay:1.6},
  chime:{partials:[[1,1],[2,.22],[4,.08]], attack:.002, decay:.35},
  boing:{partials:[[1,1],[2,.25]], attack:.004, decay:.2, glide:3},
  boom:{partials:[[1,1],[2,.3],[3,.15]], attack:.004, decay:.5, glide:7},
@@ -188,7 +196,7 @@ function melody(zone){
  return plan.map((d,beat)=>{const c=ZONE_SCORES[zone].chords[Math.floor(beat/4)%8];return [...c.map(n=>n+12),...c.map(n=>n+24)][d];});
 }
 
-export function trackKey(s){return [s.zone||'forest',s.running===false?'rest':'run',s.cycle||0,s.running===false?s.card||0:'',s.weapon||'none',s.armor||'none',levelTier(s.level||1),s.companion?1:0,'p'+(s.power||1),'party:'+(s.party||['tom']).join('+'),'c:'+JSON.stringify(s.choices||{}),s.prologue>0?'prologue':'','book:'+[...(s.songbook||[])].sort().join('+')].join('|');}
+export function trackKey(s){return [s.zone||'forest',s.running===false?'rest':'run',s.cycle||0,s.running===false?s.card||0:'',s.weapon||'none',s.armor||'none',levelTier(s.level||1),s.companion?1:0,'p'+(s.power||1),'party:'+(s.party||['tom']).join('+'),'c:'+JSON.stringify(s.choices||{}),s.prologue>0?'prologue':'','book:'+[...(s.songbook||[])].sort().join('+'),'heal:'+(s.healing||'')].join('|');}
 
 // 区間の並び。冒険中は山札1束（12枚）、休憩中は焚き火の4区間。道のカードは、めくるたびに表情（スウィング・フィル・ブレイク）を変える。
 function planFor(state,world){
@@ -362,6 +370,9 @@ export function composeTrack(state,world=null,area=world?layoutArea(world,state.
  // 休憩中は、いまのカードの入口で立ち止まった景色のまま。
  const scrollBase=running||!area?0:area.cardStart[Math.max(0,Math.min(DECK_SIZE-1,state.card||0))];
  const objects=world&&area?sceneObjects(world,area,moved,scrollBase,steps,note,chordAt,local):[];
+ // 癒しの道具の響き。1拍ごとに、その周波数の音が息をするように鳴る（周波数そのままで、和音には合わせない）。
+ const healing=HEALING[state.healing]??null;
+ if(healing?.tone)for(let s=0;s<steps;s+=2)notes.push({step:s,off:0,inst:'aura',midi:null,freq:healing.tone,gain:.05,bus:'main',dur:beat*.9,end:barEnd(s),src:null});
  // 夜風（背景の空気）。小節の頭で和音がゆっくり息をする。
  for(let s=0;s<steps;s+=8)chordAt(s).forEach(n=>note(s,'pad',n+12,segAt(s).mood==='rest'||inBreak(s)?.05:.035,'main',2.2));
  // 集められる音が鳴る時刻（同じ物・同じコマは1つにまとめる）。画面はこれでタップを判定する。
@@ -369,7 +380,7 @@ export function composeTrack(state,world=null,area=world?layoutArea(world,state.
  for(const n of notes){if(!n.src)continue;const id=n.src+':'+n.step+':'+n.off;if(seen.has(id))continue;seen.add(id);events.push({t:stepTimes[n.step]+n.off*(stepTimes[n.step+1]-stepTimes[n.step]),src:n.src,step:n.step});}
  events.sort((a,b)=>a.t-b.t);
  return {key:trackKey({...state,zone,weapon,armor}),zone,bpm:score.bpm,running,events,
-  weapon,armor,hits:arms.hits,genre:genre.genre,chords,cycle:state.cycle||0,kind:state.prologue>0?'prologue':state.running===false?'rest':'deck',segments:plan.map(({card,mood,foes,monsters,theme,start,turns,steps,party,joins,choice})=>({card,mood,foes,monsters,theme,start,turns,steps,party,joins,choice})),steps,stepTimes,duration:stepTimes[steps],moving,scrollBase,notes,actors:cast,objects,fx};
+  weapon,armor,hits:arms.hits,healing:state.healing||null,tuning:healing?.tuning??440,genre:genre.genre,chords,cycle:state.cycle||0,kind:state.prologue>0?'prologue':state.running===false?'rest':'deck',segments:plan.map(({card,mood,foes,monsters,theme,start,turns,steps,party,joins,choice})=>({card,mood,foes,monsters,theme,start,turns,steps,party,joins,choice})),steps,stepTimes,duration:stepTimes[steps],moving,scrollBase,notes,actors:cast,objects,fx};
 }
 
 // エリアの帯から、この曲で画面に映る物を取り出し、各コマの動きと音を決める。
@@ -398,7 +409,7 @@ function sceneObjects(world,area,moved,scrollBase,steps,note,chordAt,local){
 // 楽譜を波形にする。末尾からはみ出た余韻は先頭へ回し込み、ループの継ぎ目を消す。
 export function renderTrack(track,rate=MUSIC_RATE){
  const len=Math.round(track.duration*rate),buses={main:new Float32Array(len),hero:new Float32Array(len)};
- track.notes.forEach((n,i)=>{const t=track.stepTimes[n.step]+(n.off||0)*(track.stepTimes[n.step+1]-track.stepTimes[n.step]),start=Math.round(t*rate);voice(buses[n.bus],n,INSTRUMENTS[n.inst],start,rate,i,Math.round(n.end*rate)-start);});
+ track.notes.forEach((n,i)=>{n.tuning=track.tuning;const t=track.stepTimes[n.step]+(n.off||0)*(track.stepTimes[n.step+1]-track.stepTimes[n.step]),start=Math.round(t*rate);voice(buses[n.bus],n,INSTRUMENTS[n.inst],start,rate,i,Math.round(n.end*rate)-start);});
  const beat=60/track.bpm;
  if(track.fx.lowpass)lowpass(buses.hero,track.fx.lowpass);
  if(track.fx.warm)lowpass(buses.main,track.fx.warm);
@@ -413,7 +424,7 @@ function sine(phase){const x=(phase-Math.floor(phase))*TABLE_SIZE,i=x|0;return S
 // 1音を合成して足し込む。減衰は掛け算で進め、聞こえなくなったら打ち切る（端末で一瞬で終わるように）。
 function voice(buf,n,inst,start,rate,seed,until=Infinity){
  const len=buf.length,frames=Math.min(Math.ceil((n.dur+inst.decay*4)*rate),rate*4),r=rng('noise'+seed);
- const f0=n.midi==null?0:440*2**((n.midi-69)/12),ratios=inst.partials?.map(p=>p[0])??[],amps=inst.partials?.map(p=>p[1])??[],phases=ratios.map(()=>0);
+ const f0=n.freq??(n.midi==null?0:(n.tuning||440)*2**((n.midi-69)/12)),ratios=inst.partials?.map(p=>p[0])??[],amps=inst.partials?.map(p=>p[1])??[],phases=ratios.map(()=>0);
  const fall=Math.exp(-1/(inst.decay*rate)),release=Math.exp(-1/(inst.decay*.5*rate)),held=Math.round(n.dur*rate),attack=Math.max(1,inst.attack*rate),w=1/rate;
  const bend=inst.glide?Math.exp(-1/(.06*rate)):0,close=Math.exp(-1/(.06*rate));
  let x0=0,y=0,decay=1,glide=1;
