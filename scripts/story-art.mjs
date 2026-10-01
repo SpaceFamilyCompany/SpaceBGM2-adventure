@@ -1,105 +1,85 @@
-// 物語（プロローグ・第1章）の仮のドット絵（Claude 作。Codex の本番の絵に差し替える予定）。
-// パレットは scripts/pixel-art.mjs と同じ文字。1コマ = 8分音符、4コマで1周。物語は docs/story.md・docs/chapter1.md。
-import {SPRITES,PALETTE} from './pixel-art.mjs';
-import {OBJECTS} from './forest-objects.mjs';
-
-const W=32;
-const pad=rows=>{const w=Math.max(...rows.map(r=>r.length));return rows.map(r=>r.padEnd(w,'.'));};
-// 32×32 に置く（bottom = 足元の行、dx = 横のずれ）。
-function place(rows,bottom=30,dx=0,size=W){
- rows=pad(rows);
- const grid=Array.from({length:size},()=>Array(size).fill('.')),top=bottom-rows.length+1,left=Math.floor((size-rows[0].length)/2)+dx;
- rows.forEach((row,y)=>[...row].forEach((ch,x)=>{const gy=top+y,gx=left+x;if(ch!=='.'&&gy>=0&&gy<size&&gx>=0&&gx<size)grid[gy][gx]=ch;}));
- return grid.map(r=>r.join(''));
+﻿// 天の庭と第1章。整数ピクセル、1コマ＝8分音符。
+import {PALETTE} from './pixel-art.mjs';
+const canvas=(w=32,h=w)=>Array.from({length:h},()=>Array(w).fill('.'));
+function box(g,x,y,w,h,c){for(let j=y;j<y+h;j++)for(let i=x;i<x+w;i++){if(!g[j]||i<0||i>=g[0].length)throw new RangeError(`Pixel outside grid: ${i},${j}`);g[j][i]=c;}}
+function stamp(g,x,y,rows){rows.forEach((r,j)=>[...r].forEach((c,i)=>{if(c!=='.')box(g,x+i,y+j,1,1,c);}));}
+const finish=g=>g.map(r=>r.join(''));
+const frames=fn=>Array.from({length:4},(_,f)=>finish(fn(f)));
+function panel(g,x,y,w,h,c){box(g,x,y,w,h,'o');box(g,x+1,y+1,w-2,h-2,c);}
+// コロの目と鉱脈も回転する。0・2で接地、光源は常に左上。
+const stone=['....oooooo....','..oofflllfoo..','.offlllllfffo.','offflfffffffdo','offfffffffffdo','offfffffffffdo','offffffffdddo.','.offfffffddo..','..ooffddddo...','....oooooo....'];
+function koro(f,idle=false){
+ const g=canvas(),x=idle?9:[8,9,10,9][f],y=idle?21:[21,19,21,19][f];stamp(g,x,y,stone);
+ const eyes=idle?[[4,4],[8,4]]:[[[4,4],[8,4]],[[6,3],[9,6]],[[5,5],[9,5]],[[3,6],[6,3]]][f];
+ for(const [ex,ey] of eyes)box(g,x+ex,y+ey,idle&&f===2?2:1,idle&&f===2?1:2,'o');
+ box(g,x+6,y+7,2,1,'h');stamp(g,x+(idle?9:f%2?2:9),y+2,['f','d']);return g;
 }
-const recolor=(grid,map)=>grid.map(r=>[...r].map(c=>map[c]??c).join(''));
-
-// コロ：しゃべる小石。転がると木琴のように鳴る。
-const KORO=[
- '.....oooo.....',
- '...ooffffoo...',
- '..offffffffo..',
- '.offofffoffdo.',
- '.offffffffffdo',
- '.offffppffffdo',
- '..offffffffdo.',
- '...ooffffddo..',
- '.....oooooo...'
-];
-const koroBlink=KORO.map((r,y)=>y===3?'.offfffffffdo.':r);
-// ルミ：羽を落とした迷子の天使。飛ぶとハープの分散和音。
-const LUMI=[
- '.....yyyy.....',
- '....y....y....',
- '.....yyyy.....',
- '.....oSSo.....',
- '....oSoSoS....',
- '....oSSSSo....',
- '.....owwo.....',
- '..l.owwwwo.l..',
- '.llowwwwwwoll.',
- '..lowwwwwwol..',
- '...owwwwwwo...',
- '....oooooo....'
-];
-const lumiWingsUp=LUMI.map((r,y)=>y===7?'.ll.owwwwo.ll.':y===8?'llloowwwwoolll':y===9?'...owwwwwwo...':r);
-const lumiNoWings=LUMI.map(r=>r.replace(/l/g,'.'));
-// 道しるべ：分かれ道の木の標。
-const SIGN=[
- '..oooooooo....',
- '..ohhhhhhho...',
- '..ohbbbbbhho..',
- '..ohhhhhhho...',
- '..oooooooo....',
- '....ooho......',
- 'oooooooho.....',
- 'ohhhhhhhho....',
- 'oohbbbbbho....',
- '.ohhhhhhho....',
- '..oooohoo.....',
- '.....oho......',
- '.....oho......',
- '.....oho......',
- '....ohhho.....',
- '...ooooooo....'
-];
-// ひとふしの光（プロローグ）と、神の光。
-function orb(size,radius,rings){
- const c=(size-1)/2;
- return Array.from({length:size},(_,y)=>Array.from({length:size},(_,x)=>{const d=Math.hypot(x-c,y-c);for(const [r,ch] of rings)if(d<=r*radius)return ch;return '.';}).join(''));
+const angelHead=['...oooooo...','..oyYYYYyo..','.oyYYyYYyyo.','.oySSSSSSyo.','.oySoSSoSyo.','..oSSSSSSo..','...oSppSo...','....oooo....'];
+const wingDown=['.....ooo','...oollo','..ollwlo','.ollwlo.','olwwlo..','olllo...','.ooo....'];
+const wingMid=['..oooo..','.olwwloo','olwwwllo','.ollloo.','..ooo...'];
+const wingUp=['..oo....','.olwo...','olwwlo..','olwwlo..','.olwllo.','..ollloo','...oooo.'];
+function lumi(f,flying){
+ const g=canvas(),x=flying?10:[9,10,9,10][f],y=flying?[6,5,5,5][f]:11;
+ if(flying){
+  const wing=[wingDown,wingMid,wingUp,wingMid][f],wy=y+[9,7,2,7][f];
+  stamp(g,4,wy,wing);stamp(g,21,wy,wing.map(r=>[...r.padEnd(8,'.')].reverse().join('')));
+  stamp(g,10,y+8,['oooo','olll','oooo']);stamp(g,20,y+8,['oooo','lllo','oooo']);
+ }
+ stamp(g,x+2,y-5,['.oyyyyyo.','oyY...Yyo','.oyyyyyo.']);stamp(g,x,y,angelHead);
+ stamp(g,x+2,y+8,['..oooo..','.olwwlo.','olwwwwlo','olwYwwlo','olwwwwlo','olwwwwlo','olwlwwlo','ollllwlo','.oooooo.']);
+ if(flying)stamp(g,x+3,y+17,['oSo.oSo','.oo.oo.']);
+ else{stamp(g,x+1,y+9,['ooo....ooo','oSSooooSSo','.oSSSSSSo.','..oooooo..']);stamp(g,x+3,28,['oSo.oSo','oSo.oSo','ooo.ooo']);}
+ return g;
 }
-
-// ミオ：森の花守り。ゆっぴの絵の色を替えて仮に作る（帽子は桃色、服は若葉色、髪は明るく）。
-const mioColors={c:'p',C:'p',v:'G',h:'b',y:'Y'};
-const mio=frames=>frames.map(f=>recolor(f,mioColors));
-
-export const STORY_SPRITES={
- koro:{
-  roll:[place(KORO,30,-1),place(KORO,29,0),place(KORO,30,1),place(KORO,29,0)],
-  idle:[place(KORO,30),place(KORO,30),place(koroBlink,30),place(KORO,30)]
- },
- lumi:{
-  shiver:[place(lumiNoWings,30,-1),place(lumiNoWings,30,1),place(lumiNoWings,30,-1),place(lumiNoWings,30,1)],
-  fly:[place(lumiWingsUp,20),place(LUMI,21),place(LUMI,22),place(LUMI,21)]
- },
- mio:{walk:mio(SPRITES.hero.walk),idle:mio([SPRITES.hero.walk[1],SPRITES.hero.walk[1],SPRITES.hero.walk[3],SPRITES.hero.walk[1]])},
- signpost:{sway:[place(SIGN,30),place(SIGN,30,1),place(SIGN,30),place(SIGN,30,-1)]},
- altar:{glow:OBJECTS.altar.frames},
- soul:{glow:[orb(16,1,[[2,'w'],[4,'l'],[6,'c']]),orb(16,1,[[2,'w'],[4.5,'l'],[6.5,'c']]),orb(16,1,[[2.5,'w'],[5,'l'],[7,'c']]),orb(16,1,[[2,'w'],[4.5,'l'],[6.5,'c']])]},
- god:{pulse:[0,1,2,1].map(k=>orb(64,1,[[6+k,'w'],[12+k,'Y'],[18+k,'l'],[24+k*1.5,'f'],[30,'.']]))}
-};
-// 物語で音が鳴るコマ（web/score.mjs の SOUND_FRAMES と一致させる。テストで確認）。
+const mioHead=['.....oooooo....','...oobbbbbboo..','..obbbSSbbbbbo.','.obbbSSSSSbbbo.','.obbSSSSSSSbbo.','.obbSSoSSoSSbo.','.obbSSSSSSSSbo.','..obbSSSppSbo..','..obboSSSSobo..','..obbbooobbbo..','...obo....obo..'];
+function mio(f,idle=false){
+ const g=canvas(),dy=idle?0:[0,-1,0,-1][f];stamp(g,7,4+dy,mioHead);
+ // 花飾りと葉、独自の髪形。主人公と同じ足のアンカー。
+ stamp(g,8,3+dy,['..opo..','.opwpo.','opwYwpo','.opwpo.','..oGo..']);
+ stamp(g,10,15+dy,['....oooo....','...oSYYSo...','..ogGLLGo...','.ogGGLLGGo..','ogGGGyGGGGo.','.ogGGGGGGo..','.ogLGGGLGo..','ogLLGGGLLGo.','ogGGGGGGGGo.','.ooooooooo..']);
+ const lx=!idle&&f===2?10:12,rx=!idle&&f===0?19:18;
+ panel(g,lx,25+dy,4,5,'S');panel(g,rx,25+dy,4,5,'S');box(g,lx-1,29+dy,5,2,'o');box(g,lx,29+dy,3,1,'b');box(g,rx,29+dy,5,2,'o');box(g,rx+1,29+dy,3,1,'b');
+ if(!idle&&f%2){box(g,f===1?11:18,28,6,2,'.');box(g,f===1?12:18,27,5,2,'o');}
+ stamp(g,9,19+dy,['ogo','oSo','.oo']);stamp(g,21,20+dy,['ogo','oSo','.oo']);
+ if(idle&&f===2){box(g,13,9,2,1,'o');box(g,16,9,2,1,'o');box(g,13,10,1,1,'S');box(g,16,10,1,1,'S');}return g;
+}
+function signpost(f){
+ const g=canvas(),lean=[-2,0,1,0][f];stamp(g,11,26,['..ogoo..','.ogGggo.','oogGgGoo','oggggggo','oooooooo']);
+ for(let y=8;y<28;y++){const x=15+Math.round(lean*(28-y)/20);stamp(g,x,y,['ohbo']);}
+ stamp(g,6+lean,5,['.ooooooooooooo...','ohbbbbbbbbbbhho..','ohbYYbbbbbYbbhho.','ohbbbbbbbbbbhho..','.ooooooooooooo...']);
+ stamp(g,4+lean,13,['...ooooooooooooo.','..ohbbbbbbbbbbho.','.ohbbYbbbbYYbbhho','..ohbbbbbbbbbbho.','...ooooooooooooo.']);
+ box(g,15+lean,7,1,1,'o');box(g,15+lean,15,1,1,'o');stamp(g,21+lean,9,['oGLo','.oo.']);return g;
+}
+function altar(f){
+ const g=canvas(56,32);panel(g,8,11,40,17,'d');panel(g,2,25,52,7,'m');panel(g,4,6,48,8,'g');box(g,6,7,44,2,'G');box(g,7,9,42,2,'L');box(g,10,14,36,1,'f');box(g,10,23,36,2,'v');
+ for(const x of [14,39]){box(g,x,15,1,9,'v');box(g,x+1,16,2,5,'g');}
+ stamp(g,8,11,['GGLGG','gGGg.','.Gg..','..g..']);stamp(g,40,11,['GGGLG','.gGGG','..gG.','...g.']);box(g,5,26,46,1,'g');box(g,6,29,44,1,'d');
+ stamp(g,23,15,['..ooooo..','.ovvvvvo.','ovvvvvvvo','ovvvvvvvo','.ovvvvvo.','..ooooo..']);const light=f===0?'w':f===2?'d':'c';
+ box(g,27,16,1,7,light);box(g,24,18,7,1,light);box(g,26,17,3,3,f===0?'Y':light);
+ if(f===0){stamp(g,24,1,['...Y...','..YwY..','...Y...']);box(g,19,4,1,1,'c');box(g,35,3,1,1,'c');}
+ stamp(g,6,27,['gGLg','GGg.']);stamp(g,44,27,['gGGL','..Gg']);return g;
+}
+// 魂と神の光に共通する四方の光芒＝はじまりの歌のひとふし。
+function light(size,f){
+ const g=canvas(size),big=size===64,c=(size-1)/2,radius=big?[23,20,18,20][f]:[5.5,4,5.5,4][f];
+ for(let y=0;y<size;y++)for(let x=0;x<size;x++){const dx=Math.abs(x-c),dy=Math.abs(y-c),d=Math.max(dx,dy)*0.7+(dx+dy)*0.3;if(d<=radius)g[y][x]=d>radius-1?'o':d>radius-3?'c':d>radius*0.55?'l':d>radius*0.3?'Y':'w';}
+ const reach=big?[30,26,24,26][f]:[7,5,7,5][f];
+ for(let k=Math.ceil(radius+1);k<=reach;k++)for(const [x,y] of [[Math.floor(c),Math.floor(c)-k],[Math.ceil(c),Math.ceil(c)+k],[Math.floor(c)-k,Math.ceil(c)],[Math.ceil(c)+k,Math.floor(c)]])box(g,x,y,1,1,k===reach?'o':big?'Y':'c');
+ if(big){for(const [x,y] of [[10,10],[49,10],[10,49],[49,49]])stamp(g,x,y,f===0?['.o.','oYo','.o.']:['...','.f.','...']);for(const d of [-7,0,7])stamp(g,30+d,27+Math.abs(d)/7,['.w.','www','.w.']);}return g;
+}
+export const STORY_SPRITES={koro:{roll:frames(f=>koro(f)),idle:frames(f=>koro(f,true))},lumi:{shiver:frames(f=>lumi(f,false)),fly:frames(f=>lumi(f,true))},mio:{walk:frames(f=>mio(f)),idle:frames(f=>mio(f,true))},signpost:{sway:frames(signpost)},altar:{glow:frames(altar)},soul:{glow:frames(f=>light(16,f))},god:{pulse:frames(f=>light(64,f))}};
+// Contract with the score: never move a sound to a different frame.
 export const STORY_SOUND_FRAMES={
  'koro.roll':[0,2], 'lumi.fly':[0], 'mio.walk':[0,2], 'signpost.sway':[0], 'altar.glow':[0], 'soul.glow':[0,2], 'god.pulse':[0]
 };
-
-// 天の庭（プロローグの景色）。空は光のにじむ lilac、地面は雲。forest-scene と同じ 320×180 の2層。
+// 各レイヤーは独立してタイル可能。雲の上端は y=135〜146。
 export function heavenScene(){
  const rect=(x,y,w,h,c)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${PALETTE[c]}"/>`;
- let far=rect(0,0,320,180,'f')+rect(0,0,320,60,'l')+rect(0,60,320,20,'w');
- for(let i=0;i<10;i++)far+=rect(i*32+(i%3)*5,20+(i%4)*9,18,2,'w');
- let near='';
- for(let x=0;x<320;x+=40)near+=rect(x,146,40,34,'w')+rect(x+6,140,28,6,'w')+rect(x+14,136,12,4,'l');
- near+=rect(0,176,320,4,'l');
- return {far,near};
+ let far=rect(0,0,320,180,'f');
+ for(const [y,h,c] of [[0,24,'d'],[24,24,'f'],[48,30,'l'],[78,22,'w'],[100,30,'l']])far+=rect(0,y,320,h,c);
+ for(const [x,y,w,h,c] of [[112,15,96,8,'f'],[88,23,144,12,'l'],[64,35,192,16,'l'],[96,40,128,8,'w'],[120,32,80,8,'w'],[24,63,43,2,'w'],[242,58,52,2,'w'],[41,108,65,2,'w'],[206,117,78,2,'w']])far+=rect(x,y,w,h,c);
+ for(const [x,y] of [[28,22],[68,12],[252,19],[292,35]])far+=rect(x,y,1,5,'Y')+rect(x-2,y+2,5,1,'Y');
+ let near=rect(0,146,320,34,'l');
+ for(let x=0;x<320;x+=40){near+=rect(x+4,141,32,7,'w')+rect(x+10,137,20,6,'w')+rect(x+16,135,8,2,'l');near+=rect(x,148,40,7,'w')+rect(x+8,155,24,2,'f');near+=rect(x+4,164,32,3,'w')+rect(x+12,161,16,3,'w');}
+ near+=rect(0,175,320,5,'f');return {far,near};
 }
