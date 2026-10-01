@@ -19,7 +19,7 @@ const player={
  audio:new Audio(),worker:null,tracks:new Map(),urls:new Map(),track:null,wanted:'',pendingSeek:null,
  init(){
   this.worker=new Worker(URL.createObjectURL(new Blob([SCORE_SOURCE+'\n'+WORKER_MAIN],{type:'text/javascript'})));
-  this.worker.onmessage=e=>this.rendered(e.data);
+  this.worker.onmessage=e=>{this.busyKey=null;this.rendered(e.data);this.flush();};
   this.worker.onerror=()=>showError('曲を作れませんでした。ページを再読み込みしてください。');
   const a=this.audio;a.loop=true;a.preload='auto';a.setAttribute('playsinline','');
   // ループが一周した瞬間に、次の束の曲ができていれば切り替える（画面を開いている間）。
@@ -30,6 +30,9 @@ const player={
   if('mediaSession' in navigator)for(const [action,run] of [['play',()=>this.toggle(true)],['pause',()=>this.audio.pause()],['stop',()=>this.audio.pause()]]){try{navigator.mediaSession.setActionHandler(action,run);}catch{}}
  },
  // 楽譜に渡す状態。攻撃力（戦闘のターン数が変わる）も渡す。
+ // 合成の依頼。Worker が作業中なら、最新の依頼だけを取っておき、終わってから送る。
+ request(state){const key=trackKey(state);if(this.urls.has(key)||this.busyKey===key)return;this.queued={state,key};this.flush();},
+ flush(){if(this.busyKey||!this.queued)return;const {state,key}=this.queued;this.queued=null;if(this.urls.has(key))return;this.busyKey=key;this.worker.postMessage({state,world:WORLD});},
  stateFor(g){
   const choices=Object.fromEntries(Object.entries(g.choices||{}).filter(([k])=>k.startsWith(g.cycle+':')).map(([k,v])=>[+k.split(':')[1],v]));
   return {zone:'forest',running:g.running,cycle:g.cycle,card:g.card,weapon:g.equipment?.weapon,armor:g.equipment?.armor,level:1,companion:true,power:snapshot?.combatPower??1,party:g.party||['tom'],choices,prologue:g.prologue||0,songbook:g.songbook||[],healing:g.healing&&g.healing.until>Date.now()+offset?g.healing.id:null};
@@ -40,9 +43,9 @@ const player={
   if(key===this.wanted)return;
   this.wanted=key;
   if(!this.tracks.has(key))this.tracks.set(key,composeTrack(state,WORLD));
-  if(this.urls.has(key))this.apply(key);else{this.worker.postMessage({state,world:WORLD});this.sync();}
+  if(this.urls.has(key))this.apply(key);else{this.request(state);this.sync();}
   // 束の残りが4枚になったら、次の束の曲を裏で作っておく（ループの継ぎ目でそのまま切り替える）。
-  if(g.running&&g.card>=DECK_SIZE-4){const next={...state,cycle:state.cycle+1,card:0},nextKey=trackKey(next);this.nextKey=nextKey;if(!this.tracks.has(nextKey)){this.tracks.set(nextKey,composeTrack(next,WORLD));this.worker.postMessage({state:next,world:WORLD});}}
+  if(g.running&&g.card>=DECK_SIZE-4){const next={...state,cycle:state.cycle+1,card:0},nextKey=trackKey(next);this.nextKey=nextKey;if(!this.tracks.has(nextKey)&&this.urls.has(key)&&!this.busyKey){this.tracks.set(nextKey,composeTrack(next,WORLD));this.request(next);}}
  },
  rendered({key,wav}){
   this.urls.set(key,URL.createObjectURL(new Blob([wav],{type:'audio/wav'})));
@@ -223,11 +226,14 @@ const rhythm={
  target:null,hits:0,needed:3,lastEvent:null,message:'',messageUntil:0,collected:new Set(),
  // src の音が now から horizon 秒のうちに鳴る時刻（ループの継ぎ目をまたぐ分も含める）
  upcoming(track,now,src,horizon){
-  const out=[];for(const e of track.events){if(src&&e.src!==src)continue;for(const t of [e.t,e.t+track.duration]){const dt=t-now;if(dt>-.2&&dt<=horizon)out.push({...e,dt});}}
+  const ev=track.events,out=[],first=t=>{let lo=0,hi=ev.length;while(lo<hi){const mid=(lo+hi)>>1;if(ev[mid].t<t)lo=mid+1;else hi=mid;}return lo;};
+  // ループの継ぎ目をまたぐ分も見るため、now と now - duration の2か所から探す
+  for(const shift of [0,track.duration])for(let i=first(now-.2-shift);i<ev.length;i++){const e=ev[i],dt=e.t+shift-now;if(dt>horizon)break;if(dt>-.2&&(!src||e.src===src))out.push({src:e.src,step:e.step,t:e.t,dt});}
   return out.sort((a,b)=>a.dt-b.dt);
  },
  update(track,now){
   if(!track.events?.length||track.kind==='prologue'){this.target=null;return;}
+  const t=performance.now();if(t-(this.checked||0)<250)return;this.checked=t;
   const bar=8*(track.duration/track.steps);
   // ねらいを選び直す: これから2小節で、まだ集めていない音のうち一番多く鳴るもの（集め終えた音・集めている途中の音は外す）
   const book=new Set([...(snapshot?.game.songbook||[]),...this.collected]),count={};

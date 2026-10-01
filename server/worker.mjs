@@ -11,7 +11,7 @@ export default {
   if(url.pathname===BASE)return Response.redirect(url.origin+BASE+'/'+url.search,301);
   const path=url.pathname.startsWith(BASE+'/')?url.pathname.slice(BASE.length):url.pathname;
   if(path==='/apple-touch-icon.png')return new Response(Uint8Array.from(atob(ICON_PNG),c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/png'}});
-  if(path==='/app-icon.svg')return new Response(APP_ICON,{headers:{'Content-Type':'image/svg+xml'}});
+  if(path==='/app-icon.svg')return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#1C1A33"/><path d="M16 4 19 12 28 16 19 19 16 28 12 19 4 16 12 12Z" fill="#A9DDE2"/></svg>',{headers:{'Content-Type':'image/svg+xml'}});
   if(path==='/manifest.webmanifest')return new Response(JSON.stringify({id:'./',name:'SpaceBGM',short_name:'SpaceBGM',lang:'ja',start_url:'./',scope:'./',display:'standalone',background_color:'#0b1519',theme_color:'#102527',icons:[{src:'app-icon.svg',sizes:'any',type:'image/svg+xml',purpose:'any maskable'}]}),{headers:{'Content-Type':'application/manifest+json'}});
   if(path==='/')return new Response(PAGE,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'}});
   if(path==='/favicon.svg')return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#102527"/><path d="M16 4 19 12 28 16 19 19 16 28 12 19 4 16 12 12Z" fill="#b8ee91"/></svg>',{headers:{'Content-Type':'image/svg+xml'}});

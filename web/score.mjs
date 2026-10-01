@@ -29,7 +29,7 @@ export function deckFor(cycle){
 }
 // 山札の何枚目か → 景色の深さ（1〜10）。前半は森の入口、進むほど奥・霧、最後は守り人の広場。
 const depthOf=index=>Math.round(index*9/(DECK_SIZE-1))+1;
-export const MUSIC_RATE = 22050;
+export const MUSIC_RATE = 16000; // 端末で軽く合成するため（再生できない高さの倍音は計算しない）
 export const HERO_X = 120; // ゆっぴの立ち位置の中心（世界 320×180 の座標）。後ろに仲間が並ぶ
 export const VIEW_LEFT = 32, VIEW_RIGHT = 288; // 画面に映る範囲（世界の中央 256×144）
 
@@ -137,7 +137,7 @@ const INSTRUMENTS = {
  bell:{partials:[[1,1],[2,.45],[3,.18],[4,.1],[6,.05]], attack:.002, decay:.7},
  lead:{partials:[[1,1],[2,.5],[3,.33],[4,.25],[5,.2],[6,.16]], attack:.02, decay:.5, vibrato:[5.5,.006]},
  // ジャンルの楽器（防具の map で差し替わる）
- epiano:{partials:[[1,1],[2,.28],[3,.05],[4,.12]], attack:.004, decay:.9, tremolo:[4.5,.25]},
+ epiano:{partials:[[1,1],[2,.28],[4,.12]], attack:.004, decay:.9, tremolo:[4.5,.25]},
  sub:{partials:[[1,1],[2,.08]], attack:.006, decay:.3, glide:2},
  'soft-kick':{partials:[[1,1]], attack:.004, decay:.1, glide:7},
  brush:{noise:true, attack:.012, decay:.06, hp:.35},
@@ -423,25 +423,27 @@ const TABLE_SIZE=4096,SINE=Float32Array.from({length:TABLE_SIZE+1},(_,i)=>Math.s
 function sine(phase){const x=(phase-Math.floor(phase))*TABLE_SIZE,i=x|0;return SINE[i]+(SINE[i+1]-SINE[i])*(x-i);}
 // 1音を合成して足し込む。減衰は掛け算で進め、聞こえなくなったら打ち切る（端末で一瞬で終わるように）。
 function voice(buf,n,inst,start,rate,seed,until=Infinity){
- const len=buf.length,frames=Math.min(Math.ceil((n.dur+inst.decay*4)*rate),rate*4),r=rng('noise'+seed);
+ const len=buf.length,frames=Math.min(Math.ceil((n.dur+inst.decay*3)*rate),rate*3),r=rng('noise'+seed);
  const f0=n.freq??(n.midi==null?0:(n.tuning||440)*2**((n.midi-69)/12)),ratios=inst.partials?.map(p=>p[0])??[],amps=inst.partials?.map(p=>p[1])??[],phases=ratios.map(()=>0);
  const fall=Math.exp(-1/(inst.decay*rate)),release=Math.exp(-1/(inst.decay*.5*rate)),held=Math.round(n.dur*rate),attack=Math.max(1,inst.attack*rate),w=1/rate;
  const bend=inst.glide?Math.exp(-1/(.06*rate)):0,close=Math.exp(-1/(.06*rate));
- let x0=0,y=0,decay=1,glide=1;
+ let x0=0,y=0,decay=1,glide=1,trem=1;
+ // 再生できる高さ（サンプリングレートの半分）を超える倍音は計算しない（折り返して濁るのも防ぐ）
+ const nyquist=rate*.45,usable=ratios.length?ratios.filter(ratio=>f0*ratio<nyquist).length||1:0;
  for(let k=0;k<frames;k++){
   decay*=k<held?fall:fall*release;
   if(k>=until)decay*=close;
   let env=decay*n.gain;if(k<attack)env*=k/attack;
-  if(env<1e-4&&k>attack)break;
+  if(env<3e-4&&k>attack)break; // 聞こえない小ささになったら打ち切る（端末で軽く）
   const t=k/rate;
-  if(inst.tremolo)env*=1-inst.tremolo[1]*.5*(1+sine(inst.tremolo[0]*t));
+  if(inst.tremolo){if((k&15)===0)trem=1-inst.tremolo[1]*.5*(1+sine(inst.tremolo[0]*t));env*=trem;}
   let v=0;
   if(inst.noise){const x=r()*2-1;y=inst.hp*(y+x-x0);x0=x;v=y;}
   else{
    let f=f0;
    if(bend){glide*=bend;f*=2**(inst.glide*glide/12);}
    if(inst.vibrato)f*=1+inst.vibrato[1]*sine(inst.vibrato[0]*t);
-   for(let p=0;p<ratios.length;p++){phases[p]+=w*f*ratios[p];v+=amps[p]*sine(phases[p]);}
+   for(let p=0;p<usable;p++){phases[p]+=w*f*ratios[p];v+=amps[p]*sine(phases[p]);}
   }
   buf[(start+k)%len]+=v*env;
  }
