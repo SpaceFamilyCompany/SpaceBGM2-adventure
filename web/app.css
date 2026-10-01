@@ -32,6 +32,10 @@ button,input{font:inherit;color:inherit}
 .save[data-state=ok]::before{background:var(--glow)}
 .save[data-state=error]::before{background:var(--blossom)}
 
+/* リズムゲームの案内（ねらいの音・判定）。舞台の下端に重ねる */
+.rhythm{position:absolute;left:12px;right:12px;bottom:8px;margin:0;font-family:var(--dot);font-size:13px;letter-spacing:.06em;color:var(--glow);text-shadow:2px 2px 0 var(--night);pointer-events:none;min-height:1.4em}
+.stage{touch-action:manipulation;cursor:pointer}
+
 /* 下の面 */
 .panel{display:flex;flex-direction:column;gap:16px;padding-inline:var(--gutter);padding-block:16px 24px}
 

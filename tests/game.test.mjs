@@ -78,3 +78,9 @@ test('trials: choices light marks, companions join, and the guardian opens the p
  g.card=DECK_SIZE-1;g.turn=0;g=finish(g);assert.equal(g.chapterDone,true);assert.ok(g.party.includes('mio'));assert.ok(g.logs.some(l=>l.kind==='chapter'));
  assert.throws(()=>applyAction({...g,card:deckFor(g.cycle).findIndex(c=>c.kind==='battle')},{type:'choose',option:'give'},g.lastAt));
 });
+test('collecting a world sound writes it once into the songbook',()=>{
+ let g=fresh(now);assert.deepEqual(g.songbook,[]);
+ g=applyAction(g,{type:'collect',src:'frog'},now);g=applyAction(g,{type:'collect',src:'frog'},now);
+ assert.deepEqual(g.songbook,['frog']);assert.equal(g.logs.filter(l=>l.kind==='song').length,1);
+ assert.throws(()=>applyAction(g,{type:'collect',src:'dragon'},now));
+});

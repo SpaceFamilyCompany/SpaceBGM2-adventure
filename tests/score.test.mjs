@@ -126,3 +126,17 @@ test('armor changes the genre: instruments, chords and swing',()=>{
  assert.deepEqual(lofi.actors,plain.actors);
  for(const id of Object.keys(ARMORS))assert.ok(ARMORS[id].trait);for(const id of Object.keys(WEAPONS))assert.ok(WEAPONS[id].trait);
 });
+
+test('rhythm game: world sounds are tagged, uncollected ones sound muted, and events list them in time order',async()=>{
+ const {SOUND_NAMES,COLLECT_GAIN}=await import('../web/score.mjs');const {SOUNDS}=await import('../server/game.mjs');
+ assert.deepEqual(Object.keys(SOUND_NAMES).sort(),[...SOUNDS].sort());
+ for(const id of Object.keys(world.OBJECTS))assert.ok(SOUND_NAMES[id],'object '+id+' has a sound name');
+ const wild=composeTrack(run,world),tamed=composeTrack({...run,songbook:['frog','slime']},world);
+ assert.notEqual(wild.key,tamed.key);
+ const gainOf=(t,src)=>t.notes.filter(n=>n.src===src).map(n=>n.gain);
+ assert.ok(gainOf(wild,'frog').length>0);
+ gainOf(wild,'frog').forEach((g,i)=>assert.ok(Math.abs(g/COLLECT_GAIN-gainOf(tamed,'frog')[i])<1e-9,'collected frog sounds clearer'));
+ for(let i=1;i<wild.events.length;i++)assert.ok(wild.events[i].t>=wild.events[i-1].t);
+ for(const e of wild.events)assert.ok(SOUND_NAMES[e.src]);
+ assert.ok(!wild.notes.some(n=>n.bus==='hero'&&n.src),'Yuppi and the party are not collectible');
+});

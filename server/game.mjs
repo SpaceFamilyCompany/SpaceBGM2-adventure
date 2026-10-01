@@ -44,6 +44,9 @@ export function cardTurns(card,power=1){
  return TURNS_PER_CARD;
 }
 export const COMPANION_NAMES={tom:'トム',koro:'コロ',lumi:'ルミ',mio:'ミオ'};
+// 世界の音（リズムゲームで集める音）。web/score.mjs の SOUND_NAMES と同じ一覧（テストで確認）。
+export const SOUNDS=['slime','mushling','beetle','wisp','guardian','frog','owl','firefly','leaves','chest','spark','fire','signpost','altar',
+ 'flower','brook','sapling','fireflies','bush','mushroom','lantern-moss','big-tree','distant-tree','stone-pillar','dead-tree','mist-puff','owl-perch','moon-mote','resonant-stone','arch'];
 const choiceKey=g=>g.cycle+':'+g.card;
 export function migrateGame(input) {
  const g=structuredClone(input);
@@ -58,6 +61,7 @@ export function migrateGame(input) {
  // プロローグ（はじまりの歌 → 堕ちる）の残りカード数。これまでのセーブにも1度だけ流す。
  g.prologue ??= PROLOGUE_TURNS;
  g.turn ??= 0; // いまのカードの何ターン目か
+ g.songbook ??= []; // 集めた世界の音（歌の書）
  return g;
 }
 export function equipmentPower(g) {return EQUIPMENT.filter(item=>g.inventory?.includes(item.id)&&g.equipment?.[item.slot]===item.id).reduce((sum,item)=>sum+item.power,0);}
@@ -70,7 +74,7 @@ export const ZONES = [
  {id:'castle',name:'月影の古城',subtitle:'忘れられた旋律を探して',level:5,mult:3,icon:'🏰',enemy:'影の騎士',boss:'月影の竜',bpm:108}
 ];
 export function initialGame(now = Date.now()) {
- return {version:5,inventory:[],equipment:{weapon:null,armor:null},coins:60,crystals:0,level:1,companion:false,zone:'forest',cycle:0,card:0,prologue:PROLOGUE_TURNS,turn:0,chapter:1,chapterDone:false,marks:[],party:['tom'],choices:{},clears:{forest:0,cave:0,castle:0},running:true,lastAt:now,steps:0,totalCoins:0,logs:[{id:0,text:'はじめに、ひとつの歌があった。',kind:'prologue',at:now}]};
+ return {version:5,inventory:[],equipment:{weapon:null,armor:null},coins:60,crystals:0,level:1,companion:false,zone:'forest',cycle:0,card:0,prologue:PROLOGUE_TURNS,turn:0,songbook:[],chapter:1,chapterDone:false,marks:[],party:['tom'],choices:{},clears:{forest:0,cave:0,castle:0},running:true,lastAt:now,steps:0,totalCoins:0,logs:[{id:0,text:'はじめに、ひとつの歌があった。',kind:'prologue',at:now}]};
 }
 export function unlocked(g,id) {
  const i=ZONES.findIndex(z=>z.id===id);
@@ -149,9 +153,10 @@ export function applyAction(input,action,now=Date.now()) {
   case 'hire': if(g.companion)throw new Error('トムはもう仲間です。');if(g.coins<120)throw new Error('ゴールドが足りません。');g.coins-=120;g.companion=true;log(g,'白キジ猫のトムが仲間になった！ 報酬が20％増える。','level',now);break;
   case 'zone': if(!unlocked(g,action.zone))throw new Error('まだこの場所には行けません。');if(action.zone!==g.zone){g.zone=action.zone;newDeck(g);g.lastAt=now;log(g,ZONES.find(z=>z.id===g.zone).name+'へ旅立った。','travel',now);}break;
   case 'choose': {const card=cardFor(g),trial=TRIALS[card.kind];if(!trial||!trial.options[action.option])throw new Error('今は選べる試練がありません。');g.choices[choiceKey(g)]=action.option;break;}
+  case 'collect': {if(!SOUNDS.includes(action.src))throw new Error('この世界にない音です。');if(!g.songbook.includes(action.src)){g.songbook.push(action.src);log(g,'世界の音を1つ集めた。歌の書 '+g.songbook.length+'/'+SOUNDS.length,'song',now);}break;}
   case 'toggle':g.running=!g.running;g.lastAt=now;log(g,g.running?'冒険を再開した。':'焚き火でひと休み。','travel',now);break;
   default:throw new Error('不明な操作です。');
  }
  return g;
 }
-export function publicGame(g,now,report={}) {return {game:g,equipmentCatalog:EQUIPMENT,combatPower:combatPower(g),equipmentPower:equipmentPower(g),zones:ZONES.map(z=>({...z,unlocked:unlocked(g,z.id)})),trainCost:cost(g),serverNow:now,event:eventFor(g),card:cardFor(g),marksToPass:MARKS_TO_PASS,deck:deckFor(g.cycle),deckSize:DECK_SIZE,report};}
+export function publicGame(g,now,report={}) {return {game:g,equipmentCatalog:EQUIPMENT,combatPower:combatPower(g),equipmentPower:equipmentPower(g),zones:ZONES.map(z=>({...z,unlocked:unlocked(g,z.id)})),trainCost:cost(g),serverNow:now,event:eventFor(g),card:cardFor(g),marksToPass:MARKS_TO_PASS,soundCount:SOUNDS.length,deck:deckFor(g.cycle),deckSize:DECK_SIZE,report};}

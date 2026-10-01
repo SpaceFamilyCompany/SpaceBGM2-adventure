@@ -44,6 +44,17 @@ export const SOUND_FRAMES = {
  // 物語（scripts/story-art.mjs の STORY_SOUND_FRAMES と一致させる）
  'koro.roll':[0,2], 'lumi.fly':[0], 'mio.walk':[0,2], 'signpost.sway':[0], 'altar.glow':[0], 'soul.glow':[0,2], 'god.pulse':[0]
 };
+// 世界の音（リズムゲームで集める音）。音の出どころ → 歌の書に記す名前。server/game.mjs の SOUNDS と同じ一覧（テストで確認）。
+// 集めていない音は、くすんで小さく鳴る（COLLECT_GAIN 倍）。集めると澄んで鳴る。
+export const SOUND_NAMES = {
+ slime:'スライムのぽよん', mushling:'キノコの子のポン', beetle:'カブトムシのカッ', wisp:'鬼火のりん', guardian:'守り人の地響き',
+ frog:'カエルのケロッ', owl:'フクロウのホー', firefly:'蛍のひかり', leaves:'葉ずれ',
+ chest:'宝箱の鈴', spark:'道の光', fire:'焚き火のぱちぱち', signpost:'道しるべのきしみ', altar:'祭壇の鐘',
+ flower:'花のチリン', brook:'小川のチャプ', sapling:'若木のさわさわ', fireflies:'遠くの蛍', bush:'茂みのがさっ', mushroom:'大キノコのポン',
+ 'lantern-moss':'苔ランタンのきらり', 'big-tree':'大木のきしみ', 'distant-tree':'遠くの木', 'stone-pillar':'石柱の響き', 'dead-tree':'枯れ木の音',
+ 'mist-puff':'霧のふわり', 'owl-perch':'止まり木のコツ', 'moon-mote':'月のかけら', 'resonant-stone':'響く石', arch:'門のひゅう'
+};
+export const COLLECT_GAIN = .5;
 // 試練のカード。server/game.mjs の TRIALS と同じ選択肢・既定（テストで確認）。画面の選択肢の文言もここ。
 export const TRIALS = {
  fork:{title:'迷い', text:'分かれ道。小石がひとつ、片方の道へ転がっていく。', options:[{id:'follow',label:'小石を追う'},{id:'light',label:'光の道を行く'}], default:'follow', join:{follow:'koro'}},
@@ -177,7 +188,7 @@ function melody(zone){
  return plan.map((d,beat)=>{const c=ZONE_SCORES[zone].chords[Math.floor(beat/4)%8];return [...c.map(n=>n+12),...c.map(n=>n+24)][d];});
 }
 
-export function trackKey(s){return [s.zone||'forest',s.running===false?'rest':'run',s.cycle||0,s.running===false?s.card||0:'',s.weapon||'none',s.armor||'none',levelTier(s.level||1),s.companion?1:0,'p'+(s.power||1),'party:'+(s.party||['tom']).join('+'),'c:'+JSON.stringify(s.choices||{}),s.prologue>0?'prologue':''].join('|');}
+export function trackKey(s){return [s.zone||'forest',s.running===false?'rest':'run',s.cycle||0,s.running===false?s.card||0:'',s.weapon||'none',s.armor||'none',levelTier(s.level||1),s.companion?1:0,'p'+(s.power||1),'party:'+(s.party||['tom']).join('+'),'c:'+JSON.stringify(s.choices||{}),s.prologue>0?'prologue':'','book:'+[...(s.songbook||[])].sort().join('+')].join('|');}
 
 // 区間の並び。冒険中は山札1束（12枚）、休憩中は焚き火の4区間。道のカードは、めくるたびに表情（スウィング・フィル・ブレイク）を変える。
 function planFor(state,world){
@@ -255,7 +266,9 @@ export function composeTrack(state,world=null,area=world?layoutArea(world,state.
  // 音程はすべて、その小節の和音の構成音に吸着させ、小節の終わりで閉じる（次の和音へ持ち越さない）。
  const barEnd=step=>stepTimes[Math.min(steps,(step>>3)*8+8)];
  // off: そのコマの中で鳴る位置（0〜1。16分音符や三連符の連撃に使う）。楽器は防具のジャンルで差し替わる。
- const note=(step,inst,midi,gain,bus='main',dur=.3,off=0)=>{step%=steps;notes.push({step,off,inst:genre.map[inst]??inst,midi:midi==null?null:toChord(midi,chordAt(step)),gain,bus,dur,end:barEnd(step)});};
+ // src: その音を鳴らした物（世界の音なら、歌の書に集めたかどうかで音量が変わる）。
+ const songbook=new Set(state.songbook||[]);let srcNow=null;
+ const note=(step,inst,midi,gain,bus='main',dur=.3,off=0,src=srcNow)=>{step%=steps;const wild=src&&SOUND_NAMES[src]&&!songbook.has(src);notes.push({step,off,inst:genre.map[inst]??inst,midi:midi==null?null:toChord(midi,chordAt(step)),gain:wild?gain*COLLECT_GAIN:gain,bus,dur,end:barEnd(step),src:src&&SOUND_NAMES[src]?src:null});};
  const heroNote=(s,midi,gain,off=0)=>{note(s,voice,midi,gain,'hero',.3,off);if(tier>=2)note(s,voice,midi-12,gain*.3,'hero',.3,off);if(tier>=3)note(s,voice,chordAt(s)[1]+12,gain*.25,'hero',.3,off);};
  const melodyAt=s=>tune[(s>>1)%tune.length]+12*segAt(s).style.lift;
  // 各コマで鳴る音。どれも「その役者がそのコマの動きをした音」。
@@ -343,7 +356,7 @@ export function composeTrack(state,world=null,area=world?layoutArea(world,state.
  for(const [id,frames] of Object.entries(cast))frames.forEach((entry,s)=>{
   if(!entry)return;
   const [sprite,action,frame]=entry.split('-'),key=sprite+'.'+action;
-  if(SOUND_FRAMES[key]?.includes(+frame)&&entry!==frames[prev(s)])sounds[key](s,+(id.match(/^foe(\d)$/)?.[1]??0));
+  if(SOUND_FRAMES[key]?.includes(+frame)&&entry!==frames[prev(s)]){srcNow=SOUND_NAMES[sprite]?sprite:null;sounds[key](s,+(id.match(/^foe(\d)$/)?.[1]??0));srcNow=null;}
  });
  const {moving,moved}=running?walkOf(plan):{moving:Array(steps).fill(false),moved:Array(steps+1).fill(0)};
  // 休憩中は、いまのカードの入口で立ち止まった景色のまま。
@@ -351,7 +364,11 @@ export function composeTrack(state,world=null,area=world?layoutArea(world,state.
  const objects=world&&area?sceneObjects(world,area,moved,scrollBase,steps,note,chordAt,local):[];
  // 夜風（背景の空気）。小節の頭で和音がゆっくり息をする。
  for(let s=0;s<steps;s+=8)chordAt(s).forEach(n=>note(s,'pad',n+12,segAt(s).mood==='rest'||inBreak(s)?.05:.035,'main',2.2));
- return {key:trackKey({...state,zone,weapon,armor}),zone,bpm:score.bpm,running,
+ // 集められる音が鳴る時刻（同じ物・同じコマは1つにまとめる）。画面はこれでタップを判定する。
+ const seen=new Set(),events=[];
+ for(const n of notes){if(!n.src)continue;const id=n.src+':'+n.step+':'+n.off;if(seen.has(id))continue;seen.add(id);events.push({t:stepTimes[n.step]+n.off*(stepTimes[n.step+1]-stepTimes[n.step]),src:n.src,step:n.step});}
+ events.sort((a,b)=>a.t-b.t);
+ return {key:trackKey({...state,zone,weapon,armor}),zone,bpm:score.bpm,running,events,
   weapon,armor,hits:arms.hits,genre:genre.genre,chords,cycle:state.cycle||0,kind:state.prologue>0?'prologue':state.running===false?'rest':'deck',segments:plan.map(({card,mood,foes,monsters,theme,start,turns,steps,party,joins,choice})=>({card,mood,foes,monsters,theme,start,turns,steps,party,joins,choice})),steps,stepTimes,duration:stepTimes[steps],moving,scrollBase,notes,actors:cast,objects,fx};
 }
 
@@ -370,7 +387,7 @@ function sceneObjects(world,area,moved,scrollBase,steps,note,chordAt,local){
    const frame=active?s%4:idle;frames.push(frame);
    if(active&&o.sound?.frames.includes(frame)&&(s===0||frames[s-1]!==frame)){
     const [tone,octave]=OBJECT_PITCH[o.sound.voice]??[0,12];
-    note(s,o.sound.voice,chordAt(s)[tone]+octave,LANE_GAIN[lane]*(item.id==='arch'?2:1));
+    note(s,o.sound.voice,chordAt(s)[tone]+octave,LANE_GAIN[lane]*(item.id==='arch'?2:1),'main',.3,0,item.id);
    }
   }
   if(seen)shown.push({id:item.id,lane,x:item.x,width:o.width,height:o.height,baseline:o.baseline,pxPerStep,period,frames:frames.join('')});

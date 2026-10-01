@@ -32,7 +32,7 @@ const player={
  // 楽譜に渡す状態。攻撃力（戦闘のターン数が変わる）も渡す。
  stateFor(g){
   const choices=Object.fromEntries(Object.entries(g.choices||{}).filter(([k])=>k.startsWith(g.cycle+':')).map(([k,v])=>[+k.split(':')[1],v]));
-  return {zone:'forest',running:g.running,cycle:g.cycle,card:g.card,weapon:g.equipment?.weapon,armor:g.equipment?.armor,level:1,companion:true,power:snapshot?.combatPower??1,party:g.party||['tom'],choices,prologue:g.prologue||0};
+  return {zone:'forest',running:g.running,cycle:g.cycle,card:g.card,weapon:g.equipment?.weapon,armor:g.equipment?.armor,level:1,companion:true,power:snapshot?.combatPower??1,party:g.party||['tom'],choices,prologue:g.prologue||0,songbook:g.songbook||[]};
  },
  // ゲームの状態に合う曲を用意する（装備・休憩が変わった時だけ作り直す）。
  want(g){
@@ -177,7 +177,10 @@ const stage={
   if(scene.index!==this.segment)this.enterSegment(scene);
   if(t.kind==='prologue'){const line=PROLOGUE_LINES[scene.index*4+Math.min(3,Math.floor((scene.step-scene.seg.start)/TURN_STEPS))];if($('sceneText').textContent!==line)$('sceneText').textContent=line;}
   const now=performance.now(),themeA=this.themeFade?Math.min(1,(now-this.themeFade.start)/1200):1,swapA=this.swap?Math.min(1,(now-this.swap.start)/500):1;
-  const sig=scene.items.map(i=>i.kind==='bg'?i.layer+Math.round(i.offset):i.key+i.x+','+i.y).join('|')+'|'+scene.shake+'|'+themeA.toFixed(2)+'|'+swapA.toFixed(2);
+  rhythm.update(t,seconds);
+  const ring=rhythm.ring(t,scene,seconds),label=rhythm.label();
+  if($('rhythmLabel').textContent!==label)$('rhythmLabel').textContent=label;
+  const sig=(ring?ring.x+','+ring.y+','+ring.r+'|':'')+scene.items.map(i=>i.kind==='bg'?i.layer+Math.round(i.offset):i.key+i.x+','+i.y).join('|')+'|'+scene.shake+'|'+themeA.toFixed(2)+'|'+swapA.toFixed(2);
   if(sig===this.last&&!this.dirty)return;
   this.last=sig;this.dirty=false;
   const ctx=this.ctx;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,256,144);ctx.setTransform(1,0,0,1,0,scene.shake);
@@ -186,8 +189,53 @@ const stage={
    const c=sprites.get(item.key);if(c)ctx.drawImage(c,item.x-VIEW_LEFT,item.y-36);
   }
   ctx.setTransform(1,0,0,1,0,0);
+  if(ring){ctx.strokeStyle='#A9DDE2';ctx.lineWidth=1;ctx.beginPath();ctx.arc(ring.x-VIEW_LEFT,ring.y-36,Math.max(4,ring.r),0,Math.PI*2);ctx.stroke();if(ring.r<=6){ctx.fillStyle='#F0A9B9';ctx.fillRect(ring.x-VIEW_LEFT-1,ring.y-37,3,3);}}
   if(themeA>=1)this.themeFade=null;
   if(this.swap){ctx.globalAlpha=1-swapA;ctx.drawImage(this.snap,0,0);ctx.globalAlpha=1;if(swapA>=1)this.swap=null;}
+ }
+};
+
+// リズムゲーム: 世界の音を集める。ねらいの物が鳴る瞬間に合わせて3回タップすると、その音が歌の書に記される。
+// 判定は曲の再生位置（なめらかな時計）と、楽譜の events（集められる音が鳴る時刻）で行う。
+const rhythm={
+ target:null,hits:0,needed:3,lastEvent:null,message:'',messageUntil:0,collected:new Set(),
+ // src の音が now から horizon 秒のうちに鳴る時刻（ループの継ぎ目をまたぐ分も含める）
+ upcoming(track,now,src,horizon){
+  const out=[];for(const e of track.events){if(src&&e.src!==src)continue;for(const t of [e.t,e.t+track.duration]){const dt=t-now;if(dt>-.2&&dt<=horizon)out.push({...e,dt});}}
+  return out.sort((a,b)=>a.dt-b.dt);
+ },
+ update(track,now){
+  if(!track.events?.length||track.kind==='prologue'){this.target=null;return;}
+  const bar=8*(track.duration/track.steps);
+  // ねらいを選び直す: これから2小節で、まだ集めていない音のうち一番多く鳴るもの（集め終えた音・集めている途中の音は外す）
+  const book=new Set([...(snapshot?.game.songbook||[]),...this.collected]),count={};
+  if(this.target&&!book.has(this.target)&&this.upcoming(track,now,this.target,bar*4).length)return;
+  for(const e of this.upcoming(track,now,null,bar*2))if(!book.has(e.src))count[e.src]=(count[e.src]||0)+1;
+  const next=Object.entries(count).sort((a,b)=>b[1]-a[1])[0]?.[0]??null;
+  if(next!==this.target){this.target=next;this.hits=0;}
+ },
+ say(text){this.message=text;this.messageUntil=performance.now()+1400;},
+ label(){
+  if(performance.now()<this.messageUntil)return this.message;
+  return this.target?'♪ '+SOUND_NAMES[this.target]+'　'+this.hits+'/'+this.needed:'';
+ },
+ tap(){
+  const t=player.visual();if(!t||!this.target)return;
+  if(player.audio.paused){this.say('再生すると、世界の音を集められる');return;}
+  const now=smooth.now(player.clock(),t.duration),near=this.upcoming(t,now-.2,this.target,.4).map(e=>({...e,dt:Math.abs(e.dt-.2)})).sort((a,b)=>a.dt-b.dt)[0];
+  const id=near&&near.src+':'+near.step;
+  if(!near||near.dt>.12||id===this.lastEvent){this.hits=0;this.say('はずれ。もう一度、音に合わせて');return;}
+  this.lastEvent=id;this.hits++;
+  this.say((near.dt<=.06?'ぴったり！':'いいね！')+'　'+this.hits+'/'+this.needed);
+  if(this.hits>=this.needed){const src=this.target;this.collected.add(src);this.target=null;this.hits=0;this.say('歌の書に「'+SOUND_NAMES[src]+'」');command({type:'collect',src});}
+ },
+ // ねらいの物の上のリング。鳴る瞬間へ向けて縮んでいく（1拍前から）。
+ ring(track,scene,now){
+  if(!this.target)return null;
+  const item=scene.items.filter(i=>i.kind==='sprite'&&(i.key.startsWith(this.target+'-')||i.key.startsWith('obj:'+this.target+'-'))).sort((a,b)=>Math.abs(a.x-160)-Math.abs(b.x-160))[0];
+  if(!item)return null;
+  const c=sprites.get(item.key),beat=2*(track.duration/track.steps),next=this.upcoming(track,now,this.target,beat)[0];
+  return {x:item.x+(c?.width??32)/2,y:item.y+(c?.height??32)/2,r:next?Math.round(5+18*Math.max(0,next.dt)/beat):0};
  }
 };
 
@@ -248,7 +296,7 @@ function choicePanel(g){
 }
 function journey(g){
  const marks=g.marks?.length??0,need=snapshot.marksToPass??3;
- $('marks').textContent='しるし '+'◆'.repeat(marks)+'◇'.repeat(Math.max(0,need-marks))+'　仲間 '+(g.party||['tom']).map(id=>COMPANION_NAMES[id]||id).join('・')+(g.chapterDone?'　第1章 完':'');
+ $('marks').textContent='しるし '+'◆'.repeat(marks)+'◇'.repeat(Math.max(0,need-marks))+'　仲間 '+(g.party||['tom']).map(id=>COMPANION_NAMES[id]||id).join('・')+'　歌の書 '+(g.songbook?.length??0)+'/'+(snapshot.soundCount??Object.keys(SOUND_NAMES).length)+(g.chapterDone?'　第1章 完':'');
 }
 function saved(state,text){$('saveStatus').dataset.state=state;$('saveStatus').textContent=text;}
 async function load(){
@@ -277,6 +325,8 @@ stage.init();
 sprites.loadBackgrounds();
 player.init();
 $('play').onclick=()=>player.toggle();
+$('stage').addEventListener('pointerdown',e=>{e.preventDefault();rhythm.tap();});
+document.addEventListener('keydown',e=>{if(e.code==='Space'&&!e.repeat&&!['INPUT','BUTTON','TEXTAREA'].includes(document.activeElement?.tagName)){e.preventDefault();rhythm.tap();}});
 $('rest').onclick=()=>command({type:'toggle'});
 $('volume').oninput=()=>{player.audio.volume=Number($('volume').value)/100;};
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){load();player.sync();}});
