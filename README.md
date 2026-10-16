@@ -55,3 +55,7 @@ npx wrangler deploy             # spefami.com/bgm/ へ公開（Cloudflare Worker
 | `server/worker.mjs` / `server/store.mjs` | 画面と保存API。保存は Durable Object 1つ |
 
 色は Space Family のブランドカラー（ink・lilac・pink・cyan）です。
+
+## ライセンス
+
+All rights reserved.
