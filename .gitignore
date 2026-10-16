@@ -1,3 +1,11 @@
 dist/
 site.tar.gz
 .wrangler/
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
